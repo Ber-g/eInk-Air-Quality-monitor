@@ -28,6 +28,18 @@ class AirQualityMonitor:
                 'lat': 45.1885,
                 'lon': 5.7245,
                 'api': 'openweather'
+            },
+            'Paris': {
+                'name': 'Paris, France',
+                'lat': 48.8566,
+                'lon': 2.3522,
+                'api': 'openweather'
+            },
+            'Tokyo': {
+                'name': 'Tokyo, Japan',
+                'lat': 35.6762,
+                'lon': 139.6503,
+                'api': 'openweather'
             }
         }
         
