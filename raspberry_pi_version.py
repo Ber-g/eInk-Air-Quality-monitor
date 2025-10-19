@@ -29,8 +29,8 @@ class EInkAirQualityMonitor:
         self.locations = {
             'Montreal': {
                 'name': 'Montréal',
-                'lat': 45.5017,
-                'lon': -73.5673,
+                'lat': 45.49045,
+                'lon': -73.6446,
                 'api': 'openweather'
             },
             'Grenoble': {

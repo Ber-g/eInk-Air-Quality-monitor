@@ -17,10 +17,10 @@ load_dotenv()
 class AirQualityMonitor:
     def __init__(self):
         self.locations = {
-            'Montreal': {
-                'name': 'Montréal, QC, Canada',
-                'lat': 45.5017,
-                'lon': -73.5673,
+          'Montreal': {
+                'name': 'Montréal',
+                'lat': 45.49045,
+                'lon': -73.6446,
                 'api': 'openweather'
             },
             'Grenoble': {
@@ -108,21 +108,109 @@ class AirQualityMonitor:
         else:
             return "Très mauvais", "🟣"
     
+    def get_pollutant_level(self, pollutant, value):
+        """Évalue le niveau d'un polluant spécifique"""
+        # Seuils basés sur les recommandations de l'OMS et de l'UE
+        
+        if pollutant == 'pm25':
+            if value <= 10:
+                return "Excellent", "🟢"
+            elif value <= 25:
+                return "Bon", "🟡"
+            elif value <= 35:
+                return "Modéré", "🟠"
+            elif value <= 50:
+                return "Mauvais", "🔴"
+            else:
+                return "Dangereux", "🟣"
+                
+        elif pollutant == 'pm10':
+            if value <= 20:
+                return "Excellent", "🟢"
+            elif value <= 40:
+                return "Bon", "🟡"
+            elif value <= 50:
+                return "Modéré", "🟠"
+            elif value <= 100:
+                return "Mauvais", "🔴"
+            else:
+                return "Dangereux", "🟣"
+                
+        elif pollutant == 'no2':
+            if value <= 25:
+                return "Excellent", "🟢"
+            elif value <= 40:
+                return "Bon", "🟡"
+            elif value <= 50:
+                return "Modéré", "🟠"
+            elif value <= 100:
+                return "Mauvais", "🔴"
+            else:
+                return "Dangereux", "🟣"
+                
+        elif pollutant == 'o3':
+            if value <= 60:
+                return "Excellent", "🟢"
+            elif value <= 100:
+                return "Bon", "🟡"
+            elif value <= 120:
+                return "Modéré", "🟠"
+            elif value <= 180:
+                return "Mauvais", "🔴"
+            else:
+                return "Dangereux", "🟣"
+                
+        elif pollutant == 'so2':
+            if value <= 20:
+                return "Excellent", "🟢"
+            elif value <= 40:
+                return "Bon", "🟡"
+            elif value <= 50:
+                return "Modéré", "🟠"
+            elif value <= 100:
+                return "Mauvais", "🔴"
+            else:
+                return "Dangereux", "🟣"
+                
+        elif pollutant == 'co':
+            if value <= 200:
+                return "Excellent", "🟢"
+            elif value <= 400:
+                return "Bon", "🟡"
+            elif value <= 500:
+                return "Modéré", "🟠"
+            elif value <= 1000:
+                return "Mauvais", "🔴"
+            else:
+                return "Dangereux", "🟣"
+        
+        return "Inconnu", "⚪"
+    
     def display_air_quality(self, location_name, data):
         """Affiche les données de qualité de l'air"""
         level, emoji = self.get_aqi_level(data['aqi'])
         
-        print(f"\n{'='*50}")
+        print(f"\n{'='*60}")
         print(f"📍 {location_name}")
         print(f"🕐 {data['timestamp']}")
-        print(f"{'='*50}")
+        print(f"{'='*60}")
         print(f"Indice AQI: {data['aqi']} - {level} {emoji}")
-        print(f"PM2.5: {data['pm25']} μg/m³")
-        print(f"PM10:  {data['pm10']} μg/m³")
-        print(f"NO₂:   {data['no2']} μg/m³")
-        print(f"O₃:    {data['o3']} μg/m³")
-        print(f"SO₂:   {data['so2']} μg/m³")
-        print(f"CO:    {data['co']} μg/m³")
+        print(f"{'='*60}")
+        
+        # Affichage des polluants avec leurs niveaux
+        pm25_level, pm25_emoji = self.get_pollutant_level('pm25', data['pm25'])
+        pm10_level, pm10_emoji = self.get_pollutant_level('pm10', data['pm10'])
+        no2_level, no2_emoji = self.get_pollutant_level('no2', data['no2'])
+        o3_level, o3_emoji = self.get_pollutant_level('o3', data['o3'])
+        so2_level, so2_emoji = self.get_pollutant_level('so2', data['so2'])
+        co_level, co_emoji = self.get_pollutant_level('co', data['co'])
+        
+        print(f"PM2.5: {data['pm25']:5.1f} μg/m³ - {pm25_level} {pm25_emoji}")
+        print(f"PM10:  {data['pm10']:5.1f} μg/m³ - {pm10_level} {pm10_emoji}")
+        print(f"NO₂:   {data['no2']:5.1f} μg/m³ - {no2_level} {no2_emoji}")
+        print(f"O₃:    {data['o3']:5.1f} μg/m³ - {o3_level} {o3_emoji}")
+        print(f"SO₂:   {data['so2']:5.1f} μg/m³ - {so2_level} {so2_emoji}")
+        print(f"CO:    {data['co']:5.1f} μg/m³ - {co_level} {co_emoji}")
     
     def run_monitor(self):
         """Lance le moniteur principal"""
