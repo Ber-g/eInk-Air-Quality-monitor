@@ -11,14 +11,21 @@ import pygame
 from datetime import datetime
 from aqi import label_pollutant, who_ratio, worst_pollutant, score_pollutant, LEVEL_COLORS
 
-# Pollutants shown in stats, in display order (most impactful first)
 POLLUTANT_ORDER = ["PM2.5", "PM10", "NO2", "O3", "SO2", "CO"]
 
 
 def _contrasting_text_color(bg: tuple) -> tuple:
-    """Black or white text depending on background brightness."""
     luminance = 0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2]
     return (0, 0, 0) if luminance > 140 else (255, 255, 255)
+
+
+def _format_rain(rain_h: float | None) -> str:
+    if rain_h is None:
+        return "Pas de pluie prévue"
+    h, m = divmod(int(rain_h * 60), 60)
+    if h == 0:
+        return f"Pluie dans {m} min"
+    return f"Pluie dans {h}h{m:02d}" if m else f"Pluie dans {h}h"
 
 
 class AQIDisplay:
@@ -38,6 +45,7 @@ class AQIDisplay:
         self._load_fonts()
         self.stats_visible = False
         self.data = None
+        self.weather_data = None
         self.score = 0.0
         self.bg_color = (0, 200, 0)
         self.last_updated = None
@@ -51,7 +59,6 @@ class AQIDisplay:
         return s
 
     def _load_fonts(self):
-        """Try system fonts, fall back gracefully."""
         candidates = [
             "dejavusans", "liberationsans", "freesans",
             "helvetica", "arial", "verdana", "ubuntu",
@@ -65,7 +72,7 @@ class AQIDisplay:
         def f(size):
             if chosen:
                 return pygame.font.SysFont(chosen, size, bold=False)
-            return pygame.font.Font(None, size)  # pygame built-in (readable enough)
+            return pygame.font.Font(None, size)
 
         self.font_huge   = f(max(48, self.h // 6))
         self.font_large  = f(max(28, self.h // 14))
@@ -73,20 +80,23 @@ class AQIDisplay:
         self.font_small  = f(max(14, self.h // 30))
 
     def update(self, data: dict | None):
-        """Receive new fetched data from main loop."""
+        """Receive new AQI data from fetch thread."""
         self.loading = False
         if data is None:
-            return  # keep showing last known state
+            return
         self.data = data
         self.last_updated = datetime.now()
         pol, val, worst_score = worst_pollutant(data["pollutants"])
         self.score = worst_score or 0.0
-        # Background color = label color of worst pollutant (always matches the label)
         _, color = label_pollutant(pol, val) if pol else (None, (0, 210, 0))
         self.bg_color = color
 
+    def update_weather(self, weather: dict | None):
+        """Receive new weather data from weather thread."""
+        if weather is not None:
+            self.weather_data = weather
+
     def handle_event(self, event) -> bool:
-        """Process a pygame event. Returns False if app should quit."""
         if event.type == pygame.QUIT:
             return False
         if event.type == pygame.KEYDOWN:
@@ -108,16 +118,13 @@ class AQIDisplay:
         return True
 
     def render(self):
-        """Draw the current frame."""
         self.screen.fill(self.bg_color)
-
         if self.loading:
             self._draw_loading()
         elif self.stats_visible and self.data:
             self._draw_stats()
         else:
             self._draw_color_mode()
-
         pygame.display.flip()
 
     # ── Color mode ────────────────────────────────────────────────────────────
@@ -133,61 +140,77 @@ class AQIDisplay:
         label, _    = label_pollutant(pol, val)
         ratio       = who_ratio(pol, val)
 
-        # Quality label
         self._draw_centered(label, self.font_huge, tc, offset_y=-self.h // 8)
 
-        # Worst pollutant + value
         disp_val = f"{val/1000:.1f} mg/m³" if pol == "CO" else f"{val:.0f} µg/m³"
-        hint = f"{pol}  {disp_val}"
-        self._draw_centered(hint, self.font_large, tc, offset_y=self.h // 16)
+        self._draw_centered(f"{pol}  {disp_val}", self.font_large, tc, offset_y=self.h // 16)
 
-        # WHO ratio
         if ratio:
             self._draw_centered(ratio, self.font_medium, tc, offset_y=self.h // 5)
 
-        # Station + age and hint — dimmed by blending toward background
         dim = tuple(int(tc[i] * 0.6 + self.bg_color[i] * 0.4) for i in range(3))
+        pad = max(64, int(self.w * 0.07))
 
-        age = self._data_age()
+        # Weather — top-left: symbol + temp, rain warning below if < 2h
+        if self.weather_data:
+            wd = self.weather_data
+            top_y = max(40, int(self.h * 0.06))
+            w1 = self.font_medium.render(f"{wd['symbol']}  {wd['temperature']:.0f}°C", True, dim)
+            self.screen.blit(w1, (pad, top_y))
+            rain_h = wd["rain_in_hours"]
+            if rain_h is not None and rain_h < 2.0:
+                w2 = self.font_small.render(_format_rain(rain_h), True, dim)
+                self.screen.blit(w2, (pad, top_y + w1.get_height() + 4))
+
+        # Bottom hints
+        age  = self._data_age()
         info = f"{self.data['station']}  ·  {age}"
         surf = self.font_small.render(info, True, dim)
-        self.screen.blit(surf, (self.w - surf.get_width() - 64, self.h - surf.get_height() - 48))
+        self.screen.blit(surf, (self.w - surf.get_width() - pad, self.h - surf.get_height() - 48))
 
         s2 = self.font_small.render("appuyer pour les détails", True, dim)
-        self.screen.blit(s2, (64, self.h - s2.get_height() - 48))
+        self.screen.blit(s2, (pad, self.h - s2.get_height() - 48))
 
     # ── Stats mode ────────────────────────────────────────────────────────────
 
     def _draw_stats(self):
         self.screen.blit(self._overlay, (0, 0))
 
-        tc = (0, 0, 0)
+        tc  = (0, 0, 0)
         pad = max(64, int(self.w * 0.07))
-        y = max(48, int(self.h * 0.07))
+        right = self.w - pad
+        y   = max(48, int(self.h * 0.07))
 
-        # Header
+        # Header — station (left) + weather symbol+temp (right)
         station_surf = self.font_large.render(self.data["station"], True, tc)
         self.screen.blit(station_surf, (pad, y))
+        if self.weather_data:
+            wd = self.weather_data
+            wx = self.font_medium.render(f"{wd['symbol']}  {wd['temperature']:.0f}°C", True, tc)
+            self.screen.blit(wx, (right - wx.get_width(), y))
         y += station_surf.get_height() + 4
 
-        ts = self.data["timestamp"].strftime("%d %b  %H:%M")
+        # Sub-header — timestamp (left) + rain forecast (right)
+        ts  = self.data["timestamp"].strftime("%d %b  %H:%M")
         age = self._data_age()
         sub = self.font_small.render(f"{ts}  ({age})", True, tc)
         self.screen.blit(sub, (pad, y))
+        if self.weather_data:
+            rs = self.font_small.render(_format_rain(self.weather_data["rain_in_hours"]), True, tc)
+            self.screen.blit(rs, (right - rs.get_width(), y))
         y += sub.get_height() + int(self.h * 0.04)
 
         # Separator
         pygame.draw.line(self.screen, tc, (pad, y), (self.w - pad, y), 1)
         y += int(self.h * 0.03)
 
-        # Layout — all columns derived from the same pad so margins are consistent
-        right  = self.w - pad          # right boundary
+        # Layout columns
         col_name = pad
         col_val  = pad + int(self.w * 0.10)
         col_bar  = pad + int(self.w * 0.28)
-        col_tag  = right - int(self.w * 0.22)   # tag reserved on the right
+        col_tag  = right - int(self.w * 0.22)
         gap      = int(self.w * 0.02)
-        bar_max  = col_tag - gap - col_bar       # bar fills exactly the space between
+        bar_max  = col_tag - gap - col_bar
 
         row_h = int(self.h * 0.10)
 
@@ -201,26 +224,22 @@ class AQIDisplay:
             if y > self.h * 0.92:
                 break
 
-        # Bottom hint
         hint = self.font_small.render("appuyer pour fermer", True, tc)
         self.screen.blit(hint, (pad, self.h - hint.get_height() - 48))
 
     def _draw_pollutant_row(self, pol, val, col_name, col_val, col_bar, col_tag,
                             bar_max, y, row_h, tc):
-        score         = score_pollutant(pol, val)
-        label, _      = label_pollutant(pol, val)
-        bar_w         = int(bar_max * score)
-        mid_y         = y + (row_h - self.font_medium.get_height()) // 2
-        mid_y_small   = y + (row_h - self.font_small.get_height()) // 2
+        score       = score_pollutant(pol, val)
+        label, _    = label_pollutant(pol, val)
+        bar_w       = int(bar_max * score)
+        mid_y       = y + (row_h - self.font_medium.get_height()) // 2
+        mid_y_small = y + (row_h - self.font_small.get_height()) // 2
 
-        # Name
         self.screen.blit(self.font_medium.render(pol, True, tc), (col_name, mid_y))
 
-        # Value
         disp_val = f"{val/1000:.1f} mg/m³" if pol == "CO" else f"{val:.0f} µg/m³"
         self.screen.blit(self.font_medium.render(disp_val, True, tc), (col_val, mid_y))
 
-        # Bar: background → fill (inset) → border on top
         _, bar_color = label_pollutant(pol, val)
         bar_y = y + (row_h - int(row_h * 0.40)) // 2
         bar_h = int(row_h * 0.40)
@@ -230,7 +249,6 @@ class AQIDisplay:
                              (col_bar + 1, bar_y + 1, bar_w - 2, bar_h - 2))
         pygame.draw.rect(self.screen, (0, 0, 0), (col_bar, bar_y, bar_max, bar_h), 1)
 
-        # Tag: ratio + label, anchored to col_tag (right-side column)
         ratio = who_ratio(pol, val)
         tag   = f"{ratio}  {label}" if ratio else label
         self.screen.blit(self.font_small.render(tag, True, tc), (col_tag, mid_y_small))
