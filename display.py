@@ -50,7 +50,8 @@ class AQIDisplay:
         self.stats_visible = False
         self.data = None
         self.weather_data = None
-        self._station_bar = []   # list of rgb tuples, one per station in order
+        self._station_bar = []   # list of rgb tuples, one per station in STATION_KEYS order
+        self.current_station_idx = 0
         self.score = 0.0
         self.bg_color = (0, 200, 0)
         self.last_updated = None
@@ -91,6 +92,9 @@ class AQIDisplay:
             self.font_display = pygame.font.Font(_MONOFETT, max(48, self.h // 6))
         except (FileNotFoundError, pygame.error):
             self.font_display = self.font_huge
+
+        # Station bar height = same as weather text block
+        self._bar_h = self.font_medium.get_height() + self.font_small.get_height() + 12
 
     def update(self, data: dict | None):
         """Receive new AQI data from fetch thread."""
@@ -176,14 +180,13 @@ class AQIDisplay:
         dim = tuple(int(tc[i] * 0.6 + self.bg_color[i] * 0.4) for i in range(3))
         pad = max(64, int(self.w * 0.07))
 
-        # Station color bar — top of screen, one square per station
+        # Station color bar — top of screen, one rectangle per station
         self._draw_station_bar()
-        bar_h = (self.w // len(self._station_bar)) if self._station_bar else 0
 
         # Weather — top-left below the station bar
         if self.weather_data:
             wd = self.weather_data
-            top_y = bar_h + max(16, int(self.h * 0.03))
+            top_y = self._bar_h + max(16, int(self.h * 0.03))
             w1 = self.font_medium.render(f"{wd['symbol']}  {wd['temperature']:.0f}°C", True, dim)
             self.screen.blit(w1, (pad, top_y))
             rain_h = wd["rain_in_hours"]
@@ -287,12 +290,15 @@ class AQIDisplay:
     def _draw_station_bar(self):
         if not self._station_bar:
             return
-        n   = len(self._station_bar)
-        sq  = self.w // n          # square side = width per station
-        for i, color in enumerate(self._station_bar):
-            x = i * sq
-            w = (self.w - x) if i == n - 1 else sq   # last square absorbs rounding
-            pygame.draw.rect(self.screen, color, (x, 0, w, sq))
+        n    = len(self._station_bar)
+        rect_w = self.w // n
+        rect_h = self._bar_h
+        idx  = self.current_station_idx
+        for i in range(n):
+            color = self._station_bar[(idx + i) % n]
+            x = i * rect_w
+            w = (self.w - x) if i == n - 1 else rect_w
+            pygame.draw.rect(self.screen, color, (x, 0, w, rect_h))
 
     # ── Loading screen ────────────────────────────────────────────────────────
 
