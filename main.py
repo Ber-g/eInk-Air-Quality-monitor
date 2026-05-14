@@ -83,6 +83,7 @@ def main():
         if display.station_delta != 0:
             _station_idx = (_station_idx + display.station_delta) % len(STATION_KEYS)
             display.station_delta = 0
+            display.current_station_idx = _station_idx
             display.loading = True
             display.data = None
             _fetch_event.set()
