@@ -29,6 +29,25 @@ STATIONS = {
 }
 
 
+def fetch_all() -> dict[str, dict | None]:
+    """Fetch all stations in a single API call. Returns {} on total failure."""
+    for attempt in range(2):
+        try:
+            r = requests.get(RSQA_API, params={
+                "resource_id": RESOURCE_ID,
+                "limit": 500,
+                "sort": "_id desc",
+            }, timeout=TIMEOUT)
+            r.raise_for_status()
+            records = r.json()["result"]["records"]
+            return {key: _parse(records, STATIONS[key]) for key in STATIONS}
+        except Exception as e:
+            if attempt == 0:
+                continue
+            print(f"[fetcher] RSQA unreachable after 2 attempts: {e}")
+            return {}
+
+
 def fetch(station_key: str) -> dict | None:
     """
     Fetch latest hourly data for a station.
