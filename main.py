@@ -9,7 +9,7 @@ import threading
 import time
 import pygame
 
-from fetcher import fetch, STATIONS
+from fetcher import fetch_all, STATIONS
 from weather import fetch_weather
 from display import AQIDisplay
 
@@ -24,20 +24,28 @@ _station_idx = STATION_KEYS.index("ahuntsic")
 _fetch_event = threading.Event()
 
 
-def _do_fetch(display: AQIDisplay, key: str):
-    print(f"[fetch] fetching {key}…")
-    data = fetch(key)
-    display.update(data)
-    if data:
-        print(f"[fetch] ok — {data['station']} {data['timestamp'].strftime('%H:%M')} "
-              f"PM2.5={data['pollutants'].get('PM2.5','?')} µg/m³")
-    else:
+def _do_fetch(display: AQIDisplay):
+    print("[fetch] fetching all stations…")
+    all_data = fetch_all()
+    if not all_data:
         print("[fetch] failed — keeping last display")
+        display.update(None)
+        return
+
+    current = all_data.get(STATION_KEYS[_station_idx])
+    display.update(current)
+    display.update_station_bar(all_data, STATION_KEYS)
+
+    if current:
+        print(f"[fetch] ok — {current['station']} {current['timestamp'].strftime('%H:%M')} "
+              f"PM2.5={current['pollutants'].get('PM2.5', '?')} µg/m³")
+    else:
+        print("[fetch] current station failed — keeping last display")
 
 
 def _fetch_loop(display: AQIDisplay):
     while True:
-        _do_fetch(display, STATION_KEYS[_station_idx])
+        _do_fetch(display)
         _fetch_event.wait(timeout=REFRESH_SECS)
         _fetch_event.clear()
 
