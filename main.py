@@ -79,7 +79,7 @@ def _weather_loop(display: AQIDisplay):
         w = fetch_weather()
         if w:
             display.update_weather(w)
-            rain = f"pluie dans {w['rain_in_hours']:.1f}h" if w["rain_in_hours"] else "aucune pluie prévue"
+            rain = f"pluie le {w['rain_at'].strftime('%H:%M')}" if w["rain_at"] else "aucune pluie prévue"
             print(f"[weather] ok — {w['symbol']} {w['temperature']:.1f}°C  {rain}")
         else:
             print("[weather] failed — keeping last display")

@@ -98,6 +98,7 @@ class AQIDisplay:
         self.font_large  = f(max(28, self.h // 14))
         self.font_medium = f(max(20, self.h // 20))
         self.font_small  = f(max(14, self.h // 30))
+        self.font_stats  = f(max(17, self.h // 26))  # slightly bigger than font_small, for stats rows
 
         # Monofett — used only for the quality label (main screen)
         try:
@@ -267,65 +268,47 @@ class AQIDisplay:
         pygame.draw.line(self.screen, tc, (pad, y), (self.w - pad, y), 1)
         y += int(self.h * 0.03)
 
-        # Layout columns
-        col_name = pad
-        col_val  = pad + int(self.w * 0.10)
-        col_bar  = pad + int(self.w * 0.28)
-        col_tag  = right - int(self.w * 0.22)
-        gap      = int(self.w * 0.02)
-        bar_max  = col_tag - gap - col_bar
-
-        row_h = int(self.h * 0.10)
+        # Bar spans full width between equal left/right margins
+        col_bar = pad
+        bar_max = right - pad
+        row_h   = int(self.h * 0.085)
 
         for pol in POLLUTANT_ORDER:
             val = self.data["pollutants"].get(pol)
             if val is None:
                 continue
-            self._draw_pollutant_row(pol, val, col_name, col_val, col_bar, col_tag,
-                                     bar_max, y, row_h, tc)
-            y += row_h + int(self.h * 0.015)
+            self._draw_pollutant_row(pol, val, col_bar, bar_max, y, row_h, tc)
+            y += row_h + int(self.h * 0.012)
             if y > self.h * 0.92:
                 break
 
         hint = self.font_small.render("appuyer pour fermer", True, tc)
         self.screen.blit(hint, (pad, self.h - hint.get_height() - 48))
 
-    def _draw_pollutant_row(self, pol, val, col_name, col_val, col_bar, col_tag,
-                            bar_max, y, row_h, tc):
-        score       = score_pollutant(pol, val)
-        label, _    = label_pollutant(pol, val)
+    def _draw_pollutant_row(self, pol, val, col_bar, bar_max, y, row_h, tc):
+        score        = score_pollutant(pol, val)
+        label, _     = label_pollutant(pol, val)
         _, bar_color = label_pollutant(pol, val)
-        ratio       = who_ratio(pol, val)
-        bar_w       = int(bar_max * score)
+        bar_w        = int(bar_max * score)
 
-        # Bar in upper portion, ratio text below leaves room underneath
-        bar_h = int(row_h * 0.32)
-        bar_y = y + int(row_h * 0.12)
-        text_y = bar_y + (bar_h - self.font_small.get_height()) // 2
+        fh       = self.font_stats.get_height()
+        gap_line = max(3, int(self.h * 0.007))
+        bar_h    = max(10, row_h - fh - gap_line)
+        bar_y    = y + fh + gap_line
 
-        # Name + value (font_small, vertically centered with bar)
-        disp_val = f"{val/1000:.1f} mg/m³" if pol == "CO" else f"{val:.0f} µg/m³"
-        self.screen.blit(self.font_small.render(pol,      True, tc), (col_name, text_y))
-        self.screen.blit(self.font_small.render(disp_val, True, tc), (col_val,  text_y))
+        # Line 1 — name+value (left) and label (right), same baseline
+        disp_val   = f"{val/1000:.1f} mg/m³" if pol == "CO" else f"{val:.0f} µg/m³"
+        surf_left  = self.font_stats.render(f"{pol}  {disp_val}", True, tc)
+        surf_right = self.font_stats.render(label, True, tc)
+        self.screen.blit(surf_left,  (col_bar, y))
+        self.screen.blit(surf_right, (col_bar + bar_max - surf_right.get_width(), y))
 
-        # Bar
+        # Line 2 — bar spanning full block width (equal margins on both sides)
         pygame.draw.rect(self.screen, (220, 220, 220), (col_bar, bar_y, bar_max, bar_h))
         if bar_w > 2:
             pygame.draw.rect(self.screen, bar_color,
                              (col_bar + 1, bar_y + 1, bar_w - 2, bar_h - 2))
-        pygame.draw.rect(self.screen, (0, 0, 0), (col_bar, bar_y, bar_max, bar_h), 1)
-
-        # Label — right column, centered with bar
-        label_surf = self.font_small.render(label, True, tc)
-        self.screen.blit(label_surf,
-                         (col_tag, bar_y + (bar_h - label_surf.get_height()) // 2))
-
-        # Ratio — below bar, horizontally centered within bar width
-        if ratio:
-            dim = tuple(int(c * 0.50) for c in tc)
-            ratio_surf = self.font_small.render(ratio, True, dim)
-            rx = col_bar + (bar_max - ratio_surf.get_width()) // 2
-            self.screen.blit(ratio_surf, (rx, bar_y + bar_h + 2))
+        pygame.draw.rect(self.screen, tc, (col_bar, bar_y, bar_max, bar_h), 1)
 
     # ── Station bar ───────────────────────────────────────────────────────────
 
