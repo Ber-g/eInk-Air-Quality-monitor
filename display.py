@@ -93,9 +93,9 @@ class AQIDisplay:
         except (FileNotFoundError, pygame.error):
             self.font_display = self.font_huge
 
-        # Weather symbol — 2x font_medium, same font family for Unicode coverage
+        # Weather symbol — 2x font_medium, bold, same font family for Unicode coverage
         sym_size = max(40, self.h // 10)
-        self.font_weather_symbol = pygame.font.SysFont(chosen, sym_size) if chosen else pygame.font.Font(None, sym_size)
+        self.font_weather_symbol = pygame.font.SysFont(chosen, sym_size, bold=True) if chosen else pygame.font.Font(None, sym_size)
 
         # Station bar height = same as weather text block (symbol size excluded)
         self._bar_h = self.font_medium.get_height() + self.font_small.get_height() + 12
@@ -225,9 +225,14 @@ class AQIDisplay:
         station_surf = self.font_large.render(self.data["station"], True, tc)
         self.screen.blit(station_surf, (pad, y))
         if self.weather_data:
-            wd = self.weather_data
-            wx = self.font_medium.render(f"{wd['symbol']}  {wd['temperature']:.0f}°C", True, tc)
-            self.screen.blit(wx, (right - wx.get_width(), y))
+            wd      = self.weather_data
+            w_sym   = self.font_weather_symbol.render(wd["symbol"], True, tc)
+            w_temp  = self.font_medium.render(f"  {wd['temperature']:.0f}°C", True, tc)
+            total_w = w_sym.get_width() + w_temp.get_width()
+            sx      = right - total_w
+            self.screen.blit(w_sym, (sx, y))
+            self.screen.blit(w_temp, (sx + w_sym.get_width(),
+                                      y + (w_sym.get_height() - self.font_medium.get_height()) // 2))
         y += station_surf.get_height() + 4
 
         # Sub-header — timestamp (left) + rain forecast (right)
