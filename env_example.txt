@@ -1,6 +1,0 @@
-# Configuration pour les APIs de qualité de l'air
-# OpenWeatherMap API (gratuit avec limitations)
-OPENWEATHER_API_KEY=your_api_key_here
-
-# AirVisual API (gratuit avec limitations)
-AIRVISUAL_API_KEY=your_api_key_here
