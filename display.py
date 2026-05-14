@@ -26,10 +26,22 @@ def _contrasting_text_color(bg: tuple) -> tuple:
 def _format_rain(rain_h: float | None) -> str:
     if rain_h is None:
         return "Pas de pluie prévue"
+    if rain_h <= 0:
+        return "Pluie en cours"
     h, m = divmod(int(rain_h * 60), 60)
     if h == 0:
         return f"Pluie dans {m} min"
     return f"Pluie dans {h}h{m:02d}" if m else f"Pluie dans {h}h"
+
+
+def _rain_hours(weather_data: dict | None) -> float | None:
+    """Compute remaining hours to rain from stored absolute datetime."""
+    if not weather_data:
+        return None
+    rain_at = weather_data.get("rain_at")
+    if rain_at is None:
+        return None
+    return (rain_at - datetime.now()).total_seconds() / 3600
 
 
 class AQIDisplay:
@@ -197,7 +209,7 @@ class AQIDisplay:
             ty     = top_y + (sym.get_height() - self.font_medium.get_height()) // 2
             temp   = self.font_medium.render(f"{wd['temperature']:.0f}°C", True, dim)
             self.screen.blit(temp, (tx, ty))
-            rain_h = wd["rain_in_hours"]
+            rain_h = _rain_hours(self.weather_data)
             if rain_h is not None and rain_h < 2.0:
                 rain = self.font_small.render(_format_rain(rain_h), True, dim)
                 self.screen.blit(rain, (tx, ty + temp.get_height() + 4))
@@ -221,27 +233,33 @@ class AQIDisplay:
         right = self.w - pad
         y   = max(48, int(self.h * 0.07))
 
-        # Header — station (left) + weather symbol+temp (right)
+        # Row 1 — station name (left) + weather symbol + temp (right), all on same center line
         station_surf = self.font_large.render(self.data["station"], True, tc)
-        self.screen.blit(station_surf, (pad, y))
+        w_sym = w_temp = None
         if self.weather_data:
-            wd      = self.weather_data
-            w_sym   = self.font_weather_symbol.render(wd["symbol"], True, tc)
-            w_temp  = self.font_medium.render(f"  {wd['temperature']:.0f}°C", True, tc)
+            wd    = self.weather_data
+            w_sym = self.font_weather_symbol.render(wd["symbol"], True, tc)
+            w_temp = self.font_medium.render(f"  {wd['temperature']:.0f}°C", True, tc)
+        row1_h = max(station_surf.get_height(),
+                     w_sym.get_height() if w_sym else 0)
+        self.screen.blit(station_surf,
+                         (pad, y + (row1_h - station_surf.get_height()) // 2))
+        if w_sym:
             total_w = w_sym.get_width() + w_temp.get_width()
-            sx      = right - total_w
-            self.screen.blit(w_sym, (sx, y))
+            sx = right - total_w
+            self.screen.blit(w_sym,  (sx, y + (row1_h - w_sym.get_height()) // 2))
             self.screen.blit(w_temp, (sx + w_sym.get_width(),
-                                      y + (w_sym.get_height() - self.font_medium.get_height()) // 2))
-        y += station_surf.get_height() + 4
+                                      y + (row1_h - w_temp.get_height()) // 2))
+        y += row1_h + 4
 
-        # Sub-header — timestamp (left) + rain forecast (right)
+        # Row 2 — timestamp (left) + rain forecast (right), both font_small same baseline
         ts  = self.data["timestamp"].strftime("%d %b  %H:%M")
         age = self._data_age()
         sub = self.font_small.render(f"{ts}  ({age})", True, tc)
         self.screen.blit(sub, (pad, y))
         if self.weather_data:
-            rs = self.font_small.render(_format_rain(self.weather_data["rain_in_hours"]), True, tc)
+            rain_h = _rain_hours(self.weather_data)
+            rs = self.font_small.render(_format_rain(rain_h), True, tc)
             self.screen.blit(rs, (right - rs.get_width(), y))
         y += sub.get_height() + int(self.h * 0.04)
 
@@ -276,27 +294,38 @@ class AQIDisplay:
                             bar_max, y, row_h, tc):
         score       = score_pollutant(pol, val)
         label, _    = label_pollutant(pol, val)
-        bar_w       = int(bar_max * score)
-        mid_y       = y + (row_h - self.font_medium.get_height()) // 2
-        mid_y_small = y + (row_h - self.font_small.get_height()) // 2
-
-        self.screen.blit(self.font_medium.render(pol, True, tc), (col_name, mid_y))
-
-        disp_val = f"{val/1000:.1f} mg/m³" if pol == "CO" else f"{val:.0f} µg/m³"
-        self.screen.blit(self.font_medium.render(disp_val, True, tc), (col_val, mid_y))
-
         _, bar_color = label_pollutant(pol, val)
-        bar_y = y + (row_h - int(row_h * 0.40)) // 2
-        bar_h = int(row_h * 0.40)
+        ratio       = who_ratio(pol, val)
+        bar_w       = int(bar_max * score)
+
+        # Bar in upper portion, ratio text below leaves room underneath
+        bar_h = int(row_h * 0.32)
+        bar_y = y + int(row_h * 0.12)
+        text_y = bar_y + (bar_h - self.font_small.get_height()) // 2
+
+        # Name + value (font_small, vertically centered with bar)
+        disp_val = f"{val/1000:.1f} mg/m³" if pol == "CO" else f"{val:.0f} µg/m³"
+        self.screen.blit(self.font_small.render(pol,      True, tc), (col_name, text_y))
+        self.screen.blit(self.font_small.render(disp_val, True, tc), (col_val,  text_y))
+
+        # Bar
         pygame.draw.rect(self.screen, (220, 220, 220), (col_bar, bar_y, bar_max, bar_h))
         if bar_w > 2:
             pygame.draw.rect(self.screen, bar_color,
                              (col_bar + 1, bar_y + 1, bar_w - 2, bar_h - 2))
         pygame.draw.rect(self.screen, (0, 0, 0), (col_bar, bar_y, bar_max, bar_h), 1)
 
-        ratio = who_ratio(pol, val)
-        tag   = f"{ratio}  {label}" if ratio else label
-        self.screen.blit(self.font_small.render(tag, True, tc), (col_tag, mid_y_small))
+        # Label — right column, centered with bar
+        label_surf = self.font_small.render(label, True, tc)
+        self.screen.blit(label_surf,
+                         (col_tag, bar_y + (bar_h - label_surf.get_height()) // 2))
+
+        # Ratio — below bar, horizontally centered within bar width
+        if ratio:
+            dim = tuple(int(c * 0.50) for c in tc)
+            ratio_surf = self.font_small.render(ratio, True, dim)
+            rx = col_bar + (bar_max - ratio_surf.get_width()) // 2
+            self.screen.blit(ratio_surf, (rx, bar_y + bar_h + 2))
 
     # ── Station bar ───────────────────────────────────────────────────────────
 
