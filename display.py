@@ -93,7 +93,11 @@ class AQIDisplay:
         except (FileNotFoundError, pygame.error):
             self.font_display = self.font_huge
 
-        # Station bar height = same as weather text block
+        # Weather symbol — 2x font_medium, same font family for Unicode coverage
+        sym_size = max(40, self.h // 10)
+        self.font_weather_symbol = pygame.font.SysFont(chosen, sym_size) if chosen else pygame.font.Font(None, sym_size)
+
+        # Station bar height = same as weather text block (symbol size excluded)
         self._bar_h = self.font_medium.get_height() + self.font_small.get_height() + 12
 
     def update(self, data: dict | None):
@@ -185,14 +189,18 @@ class AQIDisplay:
 
         # Weather — top-left below the station bar
         if self.weather_data:
-            wd = self.weather_data
-            top_y = self._bar_h + max(16, int(self.h * 0.03))
-            w1 = self.font_medium.render(f"{wd['symbol']}  {wd['temperature']:.0f}°C", True, dim)
-            self.screen.blit(w1, (pad, top_y))
+            wd     = self.weather_data
+            top_y  = self._bar_h + max(16, int(self.h * 0.03))
+            sym    = self.font_weather_symbol.render(wd["symbol"], True, dim)
+            self.screen.blit(sym, (pad, top_y))
+            tx     = pad + sym.get_width() + 8
+            ty     = top_y + (sym.get_height() - self.font_medium.get_height()) // 2
+            temp   = self.font_medium.render(f"{wd['temperature']:.0f}°C", True, dim)
+            self.screen.blit(temp, (tx, ty))
             rain_h = wd["rain_in_hours"]
             if rain_h is not None and rain_h < 2.0:
-                w2 = self.font_small.render(_format_rain(rain_h), True, dim)
-                self.screen.blit(w2, (pad, top_y + w1.get_height() + 4))
+                rain = self.font_small.render(_format_rain(rain_h), True, dim)
+                self.screen.blit(rain, (tx, ty + temp.get_height() + 4))
 
         # Bottom hints
         age  = self._data_age()
