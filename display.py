@@ -50,6 +50,7 @@ class AQIDisplay:
         self.stats_visible = False
         self.data = None
         self.weather_data = None
+        self._station_bar = []   # list of rgb tuples, one per station in order
         self.score = 0.0
         self.bg_color = (0, 200, 0)
         self.last_updated = None
@@ -102,6 +103,18 @@ class AQIDisplay:
         self.score = worst_score or 0.0
         _, color = label_pollutant(pol, val) if pol else (None, (0, 210, 0))
         self.bg_color = color
+
+    def update_station_bar(self, all_data: dict, station_keys: list):
+        """Compute station bar colors from all_data. Keeps last known color on failure."""
+        if not self._station_bar:
+            self._station_bar = [(80, 80, 80)] * len(station_keys)
+        for i, key in enumerate(station_keys):
+            data = all_data.get(key)
+            if not data:
+                continue
+            pol, val, _ = worst_pollutant(data["pollutants"])
+            _, color = label_pollutant(pol, val) if pol else (None, (80, 80, 80))
+            self._station_bar[i] = color
 
     def update_weather(self, weather: dict | None):
         """Receive new weather data from weather thread."""
@@ -163,10 +176,14 @@ class AQIDisplay:
         dim = tuple(int(tc[i] * 0.6 + self.bg_color[i] * 0.4) for i in range(3))
         pad = max(64, int(self.w * 0.07))
 
-        # Weather — top-left: symbol + temp, rain warning below if < 2h
+        # Station color bar — top of screen, one square per station
+        self._draw_station_bar()
+        bar_h = (self.w // len(self._station_bar)) if self._station_bar else 0
+
+        # Weather — top-left below the station bar
         if self.weather_data:
             wd = self.weather_data
-            top_y = max(40, int(self.h * 0.06))
+            top_y = bar_h + max(16, int(self.h * 0.03))
             w1 = self.font_medium.render(f"{wd['symbol']}  {wd['temperature']:.0f}°C", True, dim)
             self.screen.blit(w1, (pad, top_y))
             rain_h = wd["rain_in_hours"]
@@ -264,6 +281,18 @@ class AQIDisplay:
         ratio = who_ratio(pol, val)
         tag   = f"{ratio}  {label}" if ratio else label
         self.screen.blit(self.font_small.render(tag, True, tc), (col_tag, mid_y_small))
+
+    # ── Station bar ───────────────────────────────────────────────────────────
+
+    def _draw_station_bar(self):
+        if not self._station_bar:
+            return
+        n   = len(self._station_bar)
+        sq  = self.w // n          # square side = width per station
+        for i, color in enumerate(self._station_bar):
+            x = i * sq
+            w = (self.w - x) if i == n - 1 else sq   # last square absorbs rounding
+            pygame.draw.rect(self.screen, color, (x, 0, w, sq))
 
     # ── Loading screen ────────────────────────────────────────────────────────
 
