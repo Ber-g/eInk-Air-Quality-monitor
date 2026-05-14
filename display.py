@@ -7,9 +7,13 @@ Two modes toggled by any key/click:
   COLOR — entire screen filled with the AQI color
   STATS — same background + pollutant details overlay
 """
+import os
 import pygame
 from datetime import datetime
 from aqi import label_pollutant, who_ratio, worst_pollutant, score_pollutant, LEVEL_COLORS
+
+_FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Monofett")
+_MONOFETT  = os.path.join(_FONT_DIR, "Monofett-Regular.ttf")
 
 POLLUTANT_ORDER = ["PM2.5", "PM10", "NO2", "O3", "SO2", "CO"]
 
@@ -79,6 +83,14 @@ class AQIDisplay:
         self.font_medium = f(max(20, self.h // 20))
         self.font_small  = f(max(14, self.h // 30))
 
+        # Monofett — used only for quality label + station name
+        try:
+            self.font_display = pygame.font.Font(_MONOFETT, max(48, self.h // 6))
+            self.font_display_sm = pygame.font.Font(_MONOFETT, max(28, self.h // 14))
+        except (FileNotFoundError, pygame.error):
+            self.font_display    = self.font_huge
+            self.font_display_sm = self.font_large
+
     def update(self, data: dict | None):
         """Receive new AQI data from fetch thread."""
         self.loading = False
@@ -140,7 +152,7 @@ class AQIDisplay:
         label, _    = label_pollutant(pol, val)
         ratio       = who_ratio(pol, val)
 
-        self._draw_centered(label, self.font_huge, tc, offset_y=-self.h // 8)
+        self._draw_centered(label, self.font_display, tc, offset_y=-self.h // 8)
 
         disp_val = f"{val/1000:.1f} mg/m³" if pol == "CO" else f"{val:.0f} µg/m³"
         self._draw_centered(f"{pol}  {disp_val}", self.font_large, tc, offset_y=self.h // 16)
@@ -182,7 +194,7 @@ class AQIDisplay:
         y   = max(48, int(self.h * 0.07))
 
         # Header — station (left) + weather symbol+temp (right)
-        station_surf = self.font_large.render(self.data["station"], True, tc)
+        station_surf = self.font_display_sm.render(self.data["station"], True, tc)
         self.screen.blit(station_surf, (pad, y))
         if self.weather_data:
             wd = self.weather_data
