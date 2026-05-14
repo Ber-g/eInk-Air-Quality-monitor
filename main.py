@@ -44,10 +44,33 @@ def _do_fetch(display: AQIDisplay):
 
 
 def _fetch_loop(display: AQIDisplay):
+    _do_fetch(display)  # fetch immediately at startup
+
     while True:
-        _do_fetch(display)
-        _fetch_event.wait(timeout=REFRESH_SECS)
-        _fetch_event.clear()
+        t = time.localtime()
+
+        if t.tm_min < 50:
+            # Wait until :50 (or station change, capped at REFRESH_SECS)
+            secs = min(REFRESH_SECS, (50 - t.tm_min) * 60 - t.tm_sec)
+            triggered = _fetch_event.wait(timeout=secs)
+            _fetch_event.clear()
+            if triggered:
+                _do_fetch(display)
+                continue  # station change — restart countdown
+
+        # Polling window :50→:00 — fetch every minute until data changes (max ~10×)
+        last_ts = display.data["timestamp"] if display.data else None
+        while time.localtime().tm_min >= 50:
+            _fetch_event.wait(timeout=60)
+            _fetch_event.clear()
+            _do_fetch(display)
+            new_ts = display.data["timestamp"] if display.data else None
+            if new_ts != last_ts:
+                # Got fresh data — sleep out the rest of the polling window then resume normal
+                t2 = time.localtime()
+                if t2.tm_min >= 50:
+                    time.sleep((60 - t2.tm_min) * 60 - t2.tm_sec + 5)
+                break
 
 
 def _weather_loop(display: AQIDisplay):

@@ -57,20 +57,20 @@ def fetch_weather() -> dict | None:
         times  = data["hourly"]["time"]
         precip = data["hourly"]["precipitation"]
         now    = datetime.now()
-        rain_in_hours = None
+        rain_at = None
         for t_str, mm in zip(times, precip):
             t = datetime.fromisoformat(t_str)
             if t <= now:
                 continue
             if mm >= RAIN_THRESHOLD_MM:
-                rain_in_hours = (t - now).total_seconds() / 3600
+                rain_at = t   # absolute datetime — display computes remaining hours at render time
                 break
 
         return {
-            "temperature":   temp,
-            "weather_code":  code,
-            "symbol":        _WMO_SYMBOL.get(code, "?"),
-            "rain_in_hours": rain_in_hours,
+            "temperature": temp,
+            "weather_code": code,
+            "symbol":       _WMO_SYMBOL.get(code, "?"),
+            "rain_at":      rain_at,
         }
 
     except Exception as e:
