@@ -64,7 +64,9 @@ class AQIDisplay:
 
     def _load_fonts(self):
         candidates = [
-            "dejavusans", "liberationsans", "freesans",
+            "arialunicode",   # macOS — wide Unicode, renders weather symbols
+            "dejavusans",     # Pi/Linux — wide Unicode, renders weather symbols
+            "liberationsans", "freesans",
             "helvetica", "arial", "verdana", "ubuntu",
         ]
         chosen = None
@@ -83,13 +85,11 @@ class AQIDisplay:
         self.font_medium = f(max(20, self.h // 20))
         self.font_small  = f(max(14, self.h // 30))
 
-        # Monofett — used only for quality label + station name
+        # Monofett — used only for the quality label (main screen)
         try:
             self.font_display = pygame.font.Font(_MONOFETT, max(48, self.h // 6))
-            self.font_display_sm = pygame.font.Font(_MONOFETT, max(28, self.h // 14))
         except (FileNotFoundError, pygame.error):
-            self.font_display    = self.font_huge
-            self.font_display_sm = self.font_large
+            self.font_display = self.font_huge
 
     def update(self, data: dict | None):
         """Receive new AQI data from fetch thread."""
@@ -194,7 +194,7 @@ class AQIDisplay:
         y   = max(48, int(self.h * 0.07))
 
         # Header — station (left) + weather symbol+temp (right)
-        station_surf = self.font_display_sm.render(self.data["station"], True, tc)
+        station_surf = self.font_large.render(self.data["station"], True, tc)
         self.screen.blit(station_surf, (pad, y))
         if self.weather_data:
             wd = self.weather_data
