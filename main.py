@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Air Quality Monitor — prototype
-Fetches RSQA data every 30 min, displays fullscreen color on any monitor.
+Air Quality Monitor — prototype + météo
+Fetches RSQA data every 30 min + weather from Open-Meteo.
 Press any key or click to toggle pollutant stats.
 """
 import os
@@ -9,12 +9,14 @@ import threading
 import time
 import pygame
 
-from fetcher import fetch, STATIONS
+from fetcher import fetch_all, STATIONS
+from weather import fetch_weather
 from display import AQIDisplay
 
 # ── Config — override via env vars on Pi ──────────────────────────────────────
-REFRESH_SECS = int(os.getenv("AQI_REFRESH", 30 * 60))
-FULLSCREEN   = os.getenv("AQI_FULLSCREEN", "0") == "1"
+REFRESH_SECS         = int(os.getenv("AQI_REFRESH", 30 * 60))
+WEATHER_REFRESH_SECS = int(os.getenv("WEATHER_REFRESH", 30 * 60))
+FULLSCREEN           = os.getenv("AQI_FULLSCREEN", "0") == "1"
 
 # ── State ─────────────────────────────────────────────────────────────────────
 STATION_KEYS = list(STATIONS.keys())
@@ -22,23 +24,43 @@ _station_idx = STATION_KEYS.index("ahuntsic")
 _fetch_event = threading.Event()
 
 
-def _do_fetch(display: AQIDisplay, key: str):
-    print(f"[fetch] fetching {key}…")
-    data = fetch(key)
-    display.update(data)
-    if data:
-        print(f"[fetch] ok — {data['station']} {data['timestamp'].strftime('%H:%M')} "
-              f"PM2.5={data['pollutants'].get('PM2.5','?')} µg/m³")
-    else:
+def _do_fetch(display: AQIDisplay):
+    print("[fetch] fetching all stations…")
+    all_data = fetch_all()
+    if not all_data:
         print("[fetch] failed — keeping last display")
+        display.update(None)
+        return
+
+    current = all_data.get(STATION_KEYS[_station_idx])
+    display.update(current)
+    display.update_station_bar(all_data, STATION_KEYS)
+
+    if current:
+        print(f"[fetch] ok — {current['station']} {current['timestamp'].strftime('%H:%M')} "
+              f"PM2.5={current['pollutants'].get('PM2.5', '?')} µg/m³")
+    else:
+        print("[fetch] current station failed — keeping last display")
 
 
 def _fetch_loop(display: AQIDisplay):
     while True:
-        _do_fetch(display, STATION_KEYS[_station_idx])
-        # Wait for refresh interval OR an early wake triggered by station change
+        _do_fetch(display)
         _fetch_event.wait(timeout=REFRESH_SECS)
         _fetch_event.clear()
+
+
+def _weather_loop(display: AQIDisplay):
+    while True:
+        print("[weather] fetching…")
+        w = fetch_weather()
+        if w:
+            display.update_weather(w)
+            rain = f"pluie dans {w['rain_in_hours']:.1f}h" if w["rain_in_hours"] else "aucune pluie prévue"
+            print(f"[weather] ok — {w['symbol']} {w['temperature']:.1f}°C  {rain}")
+        else:
+            print("[weather] failed — keeping last display")
+        time.sleep(WEATHER_REFRESH_SECS)
 
 
 def main():
@@ -48,6 +70,9 @@ def main():
     t = threading.Thread(target=_fetch_loop, args=(display,), daemon=True)
     t.start()
 
+    wt = threading.Thread(target=_weather_loop, args=(display,), daemon=True)
+    wt.start()
+
     clock   = pygame.time.Clock()
     running = True
 
@@ -55,13 +80,13 @@ def main():
         for event in pygame.event.get():
             running = display.handle_event(event)
 
-        # Station change requested via arrow keys
         if display.station_delta != 0:
             _station_idx = (_station_idx + display.station_delta) % len(STATION_KEYS)
             display.station_delta = 0
+            display.current_station_idx = _station_idx
             display.loading = True
             display.data = None
-            _fetch_event.set()   # wake fetch thread immediately
+            _fetch_event.set()
 
         display.render()
         clock.tick(30)
