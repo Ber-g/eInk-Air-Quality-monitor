@@ -18,14 +18,14 @@ MISSING_VALUE = "-9999"
 
 # All RSQA stations on the island — Id matches the API field "Id"
 STATIONS = {
-    "rosemont":    {"id": "1",  "name": "Rosemont",          "address": "2580 Saint-Joseph Est"},
-    "centre_sud":  {"id": "11", "name": "Centre-Sud",         "address": "75 Ontario Est"},
-    "ndg":         {"id": "10", "name": "NDG / Décarie",       "address": "1540 de Roberval"},
-    "ahuntsic":    {"id": "9",  "name": "Ahuntsic",            "address": "4240 Charleroi"},
-    "st_laurent":  {"id": "8",  "name": "Saint-Laurent",       "address": "1050-A St-Jean-Baptiste"},
-    "laval_n":     {"id": "7",  "name": "Nord (Chateauneuf)",  "address": "76540 Chateauneuf"},
-    "ste_marie":   {"id": "2",  "name": "Sainte-Marie",        "address": "20965 Ch. Ste-Marie"},
-    "verdun":      {"id": "5",  "name": "Verdun / Wilfrid",    "address": "12400 Wilfrid-Oullette"},
+    "rosemont":   {"id": "1",  "name": "Rosemont",         "address": "2580 Saint-Joseph Est",    "lat": 45.5408, "lon": -73.5728},
+    "centre_sud": {"id": "11", "name": "Centre-Sud",        "address": "75 Ontario Est",           "lat": 45.5174, "lon": -73.5502},
+    "ndg":        {"id": "10", "name": "NDG / Décarie",     "address": "1540 de Roberval",         "lat": 45.4783, "lon": -73.6340},
+    "ahuntsic":   {"id": "9",  "name": "Ahuntsic",          "address": "4240 Charleroi",           "lat": 45.5481, "lon": -73.6639},
+    "st_laurent": {"id": "8",  "name": "Saint-Laurent",     "address": "1050-A St-Jean-Baptiste",  "lat": 45.4974, "lon": -73.7358},
+    "laval_n":    {"id": "7",  "name": "Nord (Chateauneuf)","address": "76540 Chateauneuf",        "lat": 45.6200, "lon": -73.7600},
+    "ste_marie":  {"id": "2",  "name": "Sainte-Marie",      "address": "20965 Ch. Ste-Marie",      "lat": 45.5050, "lon": -73.5580},
+    "verdun":     {"id": "5",  "name": "Verdun / Wilfrid",  "address": "12400 Wilfrid-Oullette",   "lat": 45.4588, "lon": -73.5649},
 }
 
 
@@ -122,6 +122,8 @@ def _parse(records: list, station: dict) -> dict | None:
     return {
         "station":    station["name"],
         "address":    station["address"],
+        "lat":        station["lat"],
+        "lon":        station["lon"],
         "timestamp":  ts,
         "pollutants": pollutants,
     }
