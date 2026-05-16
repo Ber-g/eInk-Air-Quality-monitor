@@ -1,0 +1,29 @@
+[Unit]
+Description=AirQualityInk — moniteur qualité de l'air
+After=network-online.target
+Wants=network-online.target
+Conflicts=getty@tty1.service
+StartLimitBurst=5
+StartLimitIntervalSec=120
+
+[Service]
+User=beranger
+SupplementaryGroups=video
+WorkingDirectory=/home/beranger/Documents/AirQ
+Environment=SDL_VIDEODRIVER=fbcon
+Environment=SDL_FBDEV=/dev/fb0
+Environment=AQI_FULLSCREEN=1
+ExecStartPre=+/usr/bin/chvt 1
+ExecStart=/usr/bin/python3 main.py
+Restart=on-failure
+RestartSec=10
+MemoryMax=200M
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+TTYPath=/dev/tty1
+TTYVTDisallocate=yes
+TTYReset=yes
+
+[Install]
+WantedBy=multi-user.target
