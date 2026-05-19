@@ -4,26 +4,53 @@ import pygame
 from datetime import datetime, timedelta
 from pages.base import BasePage, NavAction
 import log_buffer
+import history
 
+_BG     = (  0,   0,   0)
 _TEXT   = (255, 255, 255)
 _DIM    = (160, 160, 160)
 _ACCENT = (255, 255,   0)
+_WARN   = (255,  80,  80)
 
 _GAP = 12   # gap between cards
 
 
 class DebugPage(BasePage):
 
+    def on_enter(self, context: dict) -> None:
+        super().on_enter(context)
+        self._confirm_reset = False
+
     def handle_event(self, event) -> NavAction:
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE:
-                return NavAction.BACK
-            if event.key == pygame.K_r:
-                log_buffer.info("[debug] refetch demandé par l'utilisateur")
-                return NavAction.REFETCH
-            if event.key == pygame.K_q:
-                log_buffer.info("[debug] redémarrage demandé par l'utilisateur")
-                return NavAction.RESTART
+        if event.type != pygame.KEYDOWN:
+            return NavAction.NONE
+        key = event.key
+
+        if self._confirm_reset:
+            if key in (pygame.K_o, pygame.K_y):
+                disp = self._context.get("display")
+                if disp:
+                    disp._history = []
+                    disp._last_history_ts = None
+                    if disp.data:
+                        disp._history.append((disp.score, disp.bg_color))
+                        disp._last_history_ts = disp.data["timestamp"]
+                history.clear()
+                self._confirm_reset = False
+            elif key in (pygame.K_ESCAPE, pygame.K_n):
+                self._confirm_reset = False
+            return NavAction.NONE
+
+        if key == pygame.K_ESCAPE:
+            return NavAction.BACK
+        if key == pygame.K_r:
+            log_buffer.info("[debug] refetch demandé par l'utilisateur")
+            return NavAction.REFETCH
+        if key == pygame.K_q:
+            log_buffer.info("[debug] redémarrage demandé par l'utilisateur")
+            return NavAction.RESTART
+        if key == pygame.K_h:
+            self._confirm_reset = True
         return NavAction.NONE
 
     def render(self, screen, w: int, h: int, bar_h: int, fonts: dict) -> None:
@@ -84,7 +111,7 @@ class DebugPage(BasePage):
         screen.blit(btn_label, (btn_x + 12, btn_y + (btn_h - btn_label.get_height()) // 2))
 
         # Other hints — bottom-left, same baseline as button
-        hints = font_s.render("[R] Refetch   [Esc] Retour", True, _DIM)
+        hints = font_s.render("[R] Refetch   [H] Reset historique   [Esc] Retour", True, _DIM)
         hint_y = btn_y + (btn_h - hints.get_height()) // 2
         screen.blit(hints, (pad, hint_y))
 
@@ -96,3 +123,38 @@ class DebugPage(BasePage):
                 break
             screen.blit(s, (pad, y))
             y += s.get_height() + 2
+
+        # Confirmation overlay
+        if self._confirm_reset:
+            self._draw_confirm(screen, w, h, fonts)
+
+    def _draw_confirm(self, screen, w: int, h: int, fonts: dict) -> None:
+        font_m = fonts["medium"]
+        font_s = fonts["small"]
+
+        lines = [
+            ("Réinitialiser l'historique ?", font_m, _WARN),
+            ("Les données seront perdues pour toujours.", font_s, _TEXT),
+            ("", None, None),
+            ("[O] Confirmer          [Esc / N] Annuler", font_s, _DIM),
+        ]
+
+        line_surfs = [(font.render(txt, True, col) if font else None)
+                      for txt, font, col in lines]
+        gap   = 10
+        total_h = sum((s.get_height() if s else gap) for s in line_surfs) + gap * (len(lines) - 1)
+        box_w   = max((s.get_width() for s in line_surfs if s), default=200) + 64
+        box_h   = total_h + 48
+        bx      = (w - box_w) // 2
+        by      = (h - box_h) // 2
+
+        pygame.draw.rect(screen, _BG,   (bx, by, box_w, box_h))
+        pygame.draw.rect(screen, _WARN, (bx, by, box_w, box_h), 2)
+
+        cy = by + 24
+        for surf in line_surfs:
+            if surf is None:
+                cy += gap
+                continue
+            screen.blit(surf, ((w - surf.get_width()) // 2, cy))
+            cy += surf.get_height() + gap

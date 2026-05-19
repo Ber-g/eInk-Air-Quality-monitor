@@ -42,6 +42,7 @@ Affiche les données officielles RSQA de la Ville de Montréal, la météo, une 
 | Échap | Retour au menu |
 | **Page Debug** — `[R]` | Forcer un refetch immédiat |
 | **Page Debug** — `[Q]` | Redémarrer l'application (`os.execv`) |
+| **Page Debug** — `[H]` | Réinitialiser l'historique (confirmation requise) |
 
 ---
 
@@ -236,6 +237,8 @@ Un fond vert apparaît dès l'initialisation de pygame (~5s après le boot), ava
 ### Menu Debug
 
 La page Debug affiche 4 cartes d'état côte à côte (station courante, âge des données, heure du prochain fetch, score AQI), suivies du journal des 200 dernières lignes de log. Le prochain fetch est calculé comme l'heure exacte à `:50` de l'heure courante ou suivante.
+
+**Reset historique** : la touche `[H]` affiche un overlay de confirmation (bordure rouge, avertissement de perte définitive). `[O]` confirme : la DB est vidée et `_history` réinitialisée avec la mesure courante comme première barre. `[Esc]` ou `[N]` annule.
 
 ---
 

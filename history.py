@@ -42,3 +42,12 @@ def load_last_24h() -> list[tuple[float, tuple]]:
     except Exception as e:
         log_buffer.error(f"[history] load failed: {e}")
         return []
+
+
+def clear():
+    try:
+        with _conn() as db:
+            db.execute("DELETE FROM history")
+        log_buffer.info("[history] historique effacé")
+    except Exception as e:
+        log_buffer.error(f"[history] clear failed: {e}")
