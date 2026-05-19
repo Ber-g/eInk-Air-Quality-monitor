@@ -203,8 +203,10 @@ class AQIDisplay:
                 self._history.pop(0)
 
     def load_history(self, entries: list):
-        self._history = entries[-48:]
-        self._last_history_ts = None   # force re-evaluation on next update()
+        # entries = [(data_ts, score, color), ...]
+        self._history = [(score, color) for (_, score, color) in entries][-48:]
+        # Restore last known timestamp so update() won't re-append the same hour
+        self._last_history_ts = entries[-1][0] if entries else None
 
     def update_station_bar(self, all_data: dict, station_keys: list):
         """Compute station bar colors from all_data. Keeps last known color on failure."""

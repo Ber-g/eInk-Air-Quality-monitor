@@ -27,8 +27,8 @@ def _conn() -> sqlite3.Connection:
     return db
 
 
-def save(station_key: str, score: float, color: tuple):
-    ts = int(datetime.now().timestamp())
+def save(station_key: str, data_ts: "datetime", score: float, color: tuple):
+    ts = int(data_ts.timestamp())   # clé = timestamp RSQA, pas l'heure du Pi
     cutoff = int((datetime.now() - timedelta(days=_RETENTION_DAYS)).timestamp())
     with _conn() as db:
         db.execute("INSERT OR REPLACE INTO history VALUES (?,?,?,?,?,?)",
@@ -36,16 +36,17 @@ def save(station_key: str, score: float, color: tuple):
         db.execute("DELETE FROM history WHERE ts < ?", (cutoff,))
 
 
-def load_last_24h(station_key: str) -> list[tuple[float, tuple]]:
+def load_last_24h(station_key: str) -> list[tuple["datetime", float, tuple]]:
+    """Returns [(data_ts, score, color), ...] ordered oldest → newest."""
     cutoff = int((datetime.now() - timedelta(hours=24)).timestamp())
     try:
         with _conn() as db:
             rows = db.execute(
-                "SELECT score, r, g, b FROM history "
+                "SELECT ts, score, r, g, b FROM history "
                 "WHERE ts >= ? AND station = ? ORDER BY ts",
                 (cutoff, station_key)
             ).fetchall()
-        return [(row[0], (row[1], row[2], row[3])) for row in rows]
+        return [(datetime.fromtimestamp(r[0]), r[1], (r[2], r[3], r[4])) for r in rows]
     except Exception as e:
         log_buffer.error(f"[history] load failed: {e}")
         return []

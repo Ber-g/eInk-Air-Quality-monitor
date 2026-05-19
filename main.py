@@ -69,7 +69,7 @@ def _do_fetch(display: AQIDisplay):
     display.update(current)
     display.update_station_bar(all_data, _active_keys)
     if current:
-        history.save(_active_keys[_station_idx], display.score, display.bg_color)
+        history.save(_active_keys[_station_idx], current["timestamp"], display.score, display.bg_color)
         log_buffer.info(f"[fetch] ok — {current['station']} {current['timestamp'].strftime('%H:%M')} "
                         f"PM2.5={current['pollutants'].get('PM2.5', '?')} µg/m³  "
                         f"({len(_active_keys)}/{len(STATION_KEYS)} stations actives)")

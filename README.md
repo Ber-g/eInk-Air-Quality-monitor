@@ -180,7 +180,7 @@ Tous les modules utilisent `log_buffer.info/warning/error()` au lieu de `print()
 
 ### Historique
 
-SQLite local (`history.db`). Plafonné à **48 entrées** (= exactement 24h à un refresh toutes les 30 min). Dédupliqué par `timestamp` de données — changer de station dans la même heure n'ajoute pas de barre parasite. Affiché sous forme de barres colorées en bas à gauche de la vue détails.
+SQLite local (`history.db`). Plafonné à **48 entrées** (= exactement 24h à un refresh toutes les 30 min). La clé primaire est le timestamp RSQA (heure de la mesure), pas l'heure du Pi — relancer l'app 10 fois dans la même heure produit toujours 1 seule ligne par station (`INSERT OR REPLACE`). Au redémarrage, `_last_history_ts` est restauré depuis la DB pour éviter tout doublon en mémoire. Affiché sous forme de barres colorées en bas à gauche de la vue détails.
 
 ---
 
