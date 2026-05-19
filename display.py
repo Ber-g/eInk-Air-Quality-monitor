@@ -321,7 +321,7 @@ class AQIDisplay:
         tc  = (0, 0, 0)
         pad = max(64, int(self.w * 0.07))
         right = self.w - pad
-        y   = max(20, int(self.h * 0.04))
+        y   = max(20, int(self.h * 0.04)) + 16
 
         # Row 1 — station name (left) + digital clock (right)
         station_surf = self.font_large.render(self.data["station"], True, tc)

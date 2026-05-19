@@ -23,9 +23,6 @@ _early_screen.fill((0, 160, 0))
 pygame.display.flip()
 # ─────────────────────────────────────────────────────────────────────────────
 
-import tty
-import termios
-import atexit
 import threading
 import time
 
@@ -124,10 +121,6 @@ def _weather_loop(display: AQIDisplay):
 
 def main():
     global _station_idx
-    if sys.stdin.isatty():
-        old = termios.tcgetattr(sys.stdin)
-        tty.setraw(sys.stdin.fileno())
-        atexit.register(termios.tcsetattr, sys.stdin, termios.TCSADRAIN, old)
     display = AQIDisplay(fullscreen=FULLSCREEN)
     display.load_history(history.load_last_24h())
     map_tile.start_fetch()
