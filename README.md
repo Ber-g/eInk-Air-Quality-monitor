@@ -1,4 +1,4 @@
-# AirQualityInk
+# AirQualityInk — v2.4
 
 Moniteur de qualité de l'air en temps réel pour Raspberry Pi Zero 2W.
 Affiche les données officielles RSQA de la Ville de Montréal, la météo, une horloge analogique et une carte vectorielle de la ville — sans aucune clé API payante.
@@ -17,11 +17,31 @@ Affiche les données officielles RSQA de la Ville de Montréal, la météo, une 
 
 ## Utilisation
 
+### Mode principal
+
 | Entrée | Action |
 |---|---|
 | N'importe quelle touche / clic | Basculer vers la vue détails |
 | ← / → | Station précédente / suivante |
+| Tab | Ouvrir le menu |
 | Échap | Quitter |
+
+### Menu (style Amiga / Minitel)
+
+| Entrée | Action |
+|---|---|
+| ← / → ou Tab | Naviguer entre les entrées du menu |
+| Entrée | Ouvrir la page sélectionnée (animation double-blink) |
+| Échap | Fermer le menu |
+
+### Dans une page
+
+| Entrée | Action |
+|---|---|
+| Tab | Passer directement à la page suivante |
+| Échap | Retour au menu |
+| **Page Debug** — `[R]` | Forcer un refetch immédiat |
+| **Page Debug** — `[Q]` | Redémarrer l'application (`os.execv`) |
 
 ---
 
@@ -120,15 +140,20 @@ Sans cette correction, la carte serait étirée de 40 % horizontalement.
 ## Architecture logicielle
 
 ```
-main.py       — point d'entrée, boucle d'événements pygame + 2 threads daemon
-fetcher.py    — client RSQA, conversion CO, correction DST
-aqi.py        — seuils OMS 2021 + UE, couleurs AQI (source de vérité)
-display.py    — rendu pygame : mode couleur, mode détails, écran de chargement
-weather.py    — client Open-Meteo, mapping WMO → icône jour/nuit
-history.py    — persistance SQLite, 48 entrées max (24h à 30 min d'intervalle)
-map_tile.py   — carte vectorielle OSM, baking, cache, projection
-Monofett/     — police OFL pour le label de qualité (mode couleur)
-systemd/      — service et scripts d'installation pour Pi
+main.py          — point d'entrée, boucle d'événements pygame + 2 threads daemon
+fetcher.py       — client RSQA, conversion CO, correction DST
+aqi.py           — seuils OMS 2021 + UE, couleurs AQI (source de vérité)
+display.py       — rendu pygame : mode couleur, mode détails, écran de chargement
+weather.py       — client Open-Meteo, mapping WMO → icône jour/nuit
+history.py       — persistance SQLite, 48 entrées max (24h à 30 min d'intervalle)
+map_tile.py      — carte vectorielle OSM, baking, cache, projection
+log_buffer.py    — ring buffer 200 lignes + RotatingFileHandler (768 KB max sur SD)
+menu.py          — NavigationController, UIMode, barre de menu, animation blink
+pages/base.py    — BasePage + enum NavAction (protocole commun à toutes les pages)
+pages/debug.py   — page Debug : état système, journal, refetch, redémarrage
+pages/settings.py— page Paramètres (placeholder)
+Monofett/        — police OFL pour le label de qualité (mode couleur)
+systemd/         — service et scripts d'installation pour Pi
 ```
 
 ### Threads
@@ -140,9 +165,21 @@ _weather_loop     → fetch Open-Meteo toutes les 5 min
 map_tile._fetch   → fetch Overpass en arrière-plan au démarrage (une fois)
 ```
 
+### Fetch en arrière-plan + fallback stale data
+
+Quand on change de station (ou qu'un refetch est déclenché), `display.start_loading()` est appelé à la place de `data = None`. Le dernier jeu de données valide est conservé dans `_stale_data`. Si le fetch réseau met plus de **3 secondes**, les données précédentes sont réaffichées automatiquement et un spinner animé `· / ·` apparaît en bas à droite pendant que le fetch continue en arrière-plan.
+
+### Menu Amiga / Minitel
+
+Architecture de navigation à profondeur 1 : `UIMode.NORMAL` → `MENU_BAR` → `PAGE`. Ajouter une nouvelle page = créer une sous-classe de `BasePage` + une ligne `MenuItem` dans `menu.py`, rien d'autre ne change.
+
+### Journal (`log_buffer`)
+
+Tous les modules utilisent `log_buffer.info/warning/error()` au lieu de `print()`. Les 200 dernières lignes sont disponibles en mémoire (ring buffer) et affichées dans la page Debug. Un `RotatingFileHandler` écrit en parallèle dans `logs/app.log` (256 KB × 3 fichiers = 768 KB max, compatible carte SD).
+
 ### Historique
 
-SQLite local (`history.db`). Plafonné à **48 entrées** (= exactement 24h à un refresh toutes les 30 min). Affiché sous forme de barres colorées en bas à gauche de la vue détails.
+SQLite local (`history.db`). Plafonné à **48 entrées** (= exactement 24h à un refresh toutes les 30 min). Dédupliqué par `timestamp` de données — changer de station dans la même heure n'ajoute pas de barre parasite. Affiché sous forme de barres colorées en bas à gauche de la vue détails.
 
 ---
 
@@ -193,6 +230,12 @@ Overlay blanc semi-transparent sur le fond coloré.
 ### Écran de chargement
 
 Pendant le fetch initial, les 15 icônes météo du jeu Weather Icons défilent horizontalement en continu à 2 px/frame. Repli sur "Chargement…" si la police TTF est absente.
+
+Un fond vert apparaît dès l'initialisation de pygame (~5s après le boot), avant même le chargement des modules lourds — évite 25s d'écran noir.
+
+### Menu Debug
+
+La page Debug affiche 4 cartes d'état côte à côte (station courante, âge des données, heure du prochain fetch, score AQI), suivies du journal des 200 dernières lignes de log. Le prochain fetch est calculé comme l'heure exacte à `:50` de l'heure courante ou suivante.
 
 ---
 
