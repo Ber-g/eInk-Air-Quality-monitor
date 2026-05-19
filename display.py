@@ -83,6 +83,7 @@ class AQIDisplay:
         self.weather_data     = None
         self._station_bar     = []
         self.current_station_idx = 0
+        self.current_station_key: str | None = None
         self.score            = 0.0
         self._prev_score      = None
         self._history         = []
@@ -203,6 +204,7 @@ class AQIDisplay:
 
     def load_history(self, entries: list):
         self._history = entries[-48:]
+        self._last_history_ts = None   # force re-evaluation on next update()
 
     def update_station_bar(self, all_data: dict, station_keys: list):
         """Compute station bar colors from all_data. Keeps last known color on failure."""

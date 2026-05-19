@@ -69,7 +69,7 @@ def _do_fetch(display: AQIDisplay):
     display.update(current)
     display.update_station_bar(all_data, _active_keys)
     if current:
-        history.save(display.score, display.bg_color)
+        history.save(_active_keys[_station_idx], display.score, display.bg_color)
         log_buffer.info(f"[fetch] ok — {current['station']} {current['timestamp'].strftime('%H:%M')} "
                         f"PM2.5={current['pollutants'].get('PM2.5', '?')} µg/m³  "
                         f"({len(_active_keys)}/{len(STATION_KEYS)} stations actives)")
@@ -125,7 +125,9 @@ def main():
     log_buffer.init_file_log()
     log_buffer.info("[main] démarrage")
     display = AQIDisplay(fullscreen=FULLSCREEN)
-    display.load_history(history.load_last_24h())
+    initial_key = _active_keys[_station_idx]
+    display.current_station_key = initial_key
+    display.load_history(history.load_last_24h(initial_key))
     map_tile.start_fetch()
 
     t = threading.Thread(target=_fetch_loop, args=(display,), daemon=True)
@@ -154,6 +156,9 @@ def main():
             _station_idx = (_station_idx + display.station_delta) % len(_active_keys)
             display.station_delta = 0
             display.current_station_idx = _station_idx
+            new_key = _active_keys[_station_idx]
+            display.current_station_key = new_key
+            display.load_history(history.load_last_24h(new_key))
             display.start_loading()
             _fetch_event.set()
 
