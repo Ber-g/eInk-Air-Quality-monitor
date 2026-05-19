@@ -26,6 +26,7 @@ pygame.display.flip()
 import threading
 import time
 
+import log_buffer
 from fetcher import fetch_all, STATIONS
 from weather import fetch_weather
 from display import AQIDisplay
@@ -46,10 +47,10 @@ _fetch_event  = threading.Event()
 
 def _do_fetch(display: AQIDisplay):
     global _station_idx, _active_keys
-    print("[fetch] fetching all stations…")
+    log_buffer.info("[fetch] fetching all stations…")
     all_data = fetch_all()
     if not all_data:
-        print("[fetch] failed — keeping last display")
+        log_buffer.warning("[fetch] failed — keeping last display")
         display.update(None)
         return
 
@@ -69,11 +70,11 @@ def _do_fetch(display: AQIDisplay):
     display.update_station_bar(all_data, _active_keys)
     if current:
         history.save(display.score, display.bg_color)
-        print(f"[fetch] ok — {current['station']} {current['timestamp'].strftime('%H:%M')} "
-              f"PM2.5={current['pollutants'].get('PM2.5', '?')} µg/m³  "
-              f"({len(_active_keys)}/{len(STATION_KEYS)} stations actives)")
+        log_buffer.info(f"[fetch] ok — {current['station']} {current['timestamp'].strftime('%H:%M')} "
+                        f"PM2.5={current['pollutants'].get('PM2.5', '?')} µg/m³  "
+                        f"({len(_active_keys)}/{len(STATION_KEYS)} stations actives)")
     else:
-        print("[fetch] current station failed — keeping last display")
+        log_buffer.warning("[fetch] current station failed — keeping last display")
 
 
 def _fetch_loop(display: AQIDisplay):
@@ -108,19 +109,21 @@ def _fetch_loop(display: AQIDisplay):
 
 def _weather_loop(display: AQIDisplay):
     while True:
-        print("[weather] fetching…")
+        log_buffer.info("[weather] fetching…")
         w = fetch_weather()
         if w:
             display.update_weather(w)
             rain = f"pluie le {w['rain_at'].strftime('%H:%M')}" if w["rain_at"] else "aucune pluie prévue"
-            print(f"[weather] ok — {w['symbol']} {w['temperature']:.1f}°C  {rain}")
+            log_buffer.info(f"[weather] ok — {w['temperature']:.1f}°C  {rain}")
         else:
-            print("[weather] failed — keeping last display")
+            log_buffer.warning("[weather] failed — keeping last display")
         time.sleep(WEATHER_REFRESH_SECS)
 
 
 def main():
     global _station_idx
+    log_buffer.init_file_log()
+    log_buffer.info("[main] démarrage")
     display = AQIDisplay(fullscreen=FULLSCREEN)
     display.load_history(history.load_last_24h())
     map_tile.start_fetch()
@@ -138,12 +141,20 @@ def main():
         for event in pygame.event.get():
             running = display.handle_event(event)
 
+        if display._restart_requested:
+            display.quit()
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+
+        if display._refetch_requested:
+            display._refetch_requested = False
+            display.start_loading()
+            _fetch_event.set()
+
         if display.station_delta != 0:
             _station_idx = (_station_idx + display.station_delta) % len(_active_keys)
             display.station_delta = 0
             display.current_station_idx = _station_idx
-            display.loading = True
-            display.data = None
+            display.start_loading()
             _fetch_event.set()
 
         display.render()

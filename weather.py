@@ -6,6 +6,7 @@ Returns None on failure — never returns fake data.
 """
 import requests
 from datetime import datetime
+import log_buffer
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 LAT, LON = 45.5427, -73.6356  # Montréal, 8464 Henri-Julien (Villeray)
@@ -113,7 +114,7 @@ def fetch_weather() -> dict | None:
         }
 
     except Exception as e:
-        print(f"[weather] fetch failed: {e}")
+        log_buffer.error(f"[weather] fetch failed: {e}")
         return None
 
 

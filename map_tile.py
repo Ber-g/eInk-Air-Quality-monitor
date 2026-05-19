@@ -10,6 +10,7 @@ import math
 import os
 import threading
 import requests
+import log_buffer
 
 # Bounding box covering ALL RSQA stations + weather point (with margin).
 BBOX = (45.43, -73.80, 45.65, -73.52)   # min_lat, min_lon, max_lat, max_lon
@@ -62,7 +63,7 @@ def _bake() -> None:
     _surface        = surf
     _scaled_surface = None  # invalidate zoom cache
     _baked          = True
-    print("[map] surface baked")
+    log_buffer.info("[map] surface baked")
 
 
 def _fetch() -> None:
@@ -75,10 +76,10 @@ def _fetch() -> None:
                 if isinstance(d, dict) and "roads" in d and "water" in d:
                     _roads = d["roads"]
                     _water = d["water"]
-                    print(f"[map] {len(_roads)} roads + {len(_water)} water from cache")
+                    log_buffer.info(f"[map] {len(_roads)} roads + {len(_water)} water from cache")
                     return
             except Exception as e:
-                print(f"[map] cache invalid ({e}), re-fetching")
+                log_buffer.warning(f"[map] cache invalid ({e}), re-fetching")
                 os.remove(_CACHE)
 
         b = f"{BBOX[0]},{BBOX[1]},{BBOX[2]},{BBOX[3]}"
@@ -118,9 +119,9 @@ def _fetch() -> None:
         _roads, _water = roads, water
         with open(_CACHE, "w") as f:
             json.dump({"roads": roads, "water": water}, f)
-        print(f"[map] fetched {len(roads)} roads + {len(water)} water")
+        log_buffer.info(f"[map] fetched {len(roads)} roads + {len(water)} water")
     except Exception as e:
-        print(f"[map] fetch failed: {e}")
+        log_buffer.error(f"[map] fetch failed: {e}")
     finally:
         _fetching = False
 

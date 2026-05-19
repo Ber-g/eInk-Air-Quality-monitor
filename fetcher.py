@@ -7,6 +7,7 @@ Returns None on failure — never returns fake/random data.
 import time as _time
 import requests
 from datetime import datetime, timedelta
+import log_buffer
 
 # RSQA always uses HNE (UTC-5). During EDT (summer) we add +1h for local time.
 _DST_OFFSET = timedelta(hours=1)
@@ -44,7 +45,7 @@ def fetch_all() -> dict[str, dict | None]:
         except Exception as e:
             if attempt == 0:
                 continue
-            print(f"[fetcher] RSQA unreachable after 2 attempts: {e}")
+            log_buffer.error(f"[fetcher] RSQA unreachable after 2 attempts: {e}")
             return {}
 
 
@@ -85,7 +86,7 @@ def fetch(station_key: str) -> dict | None:
         except Exception as e:
             if attempt == 0:
                 continue  # one silent retry
-            print(f"[fetcher] RSQA unreachable after 2 attempts: {e}")
+            log_buffer.error(f"[fetcher] RSQA unreachable after 2 attempts: {e}")
             return None
 
 

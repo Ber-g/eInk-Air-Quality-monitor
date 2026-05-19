@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 import os
 from datetime import datetime, timedelta
+import log_buffer
 
 _DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "history.db")
 _RETENTION_DAYS = 30
@@ -39,5 +40,5 @@ def load_last_24h() -> list[tuple[float, tuple]]:
             ).fetchall()
         return [(row[0], (row[1], row[2], row[3])) for row in rows]
     except Exception as e:
-        print(f"[history] load failed: {e}")
+        log_buffer.error(f"[history] load failed: {e}")
         return []

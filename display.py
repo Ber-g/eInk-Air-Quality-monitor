@@ -9,10 +9,13 @@ Two modes toggled by any key/click:
 """
 import os
 import math
+import time
 import pygame
 from datetime import datetime
 from aqi import label_pollutant, who_ratio, worst_pollutant, score_pollutant
 import map_tile
+import log_buffer
+from menu import NavigationController, UIMode, NavAction
 
 _FONT_DIR            = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Monofett")
 _MONOFETT            = os.path.join(_FONT_DIR, "Monofett-Regular.ttf")
@@ -75,19 +78,32 @@ class AQIDisplay:
             self.screen = pygame.display.set_mode((self.w, self.h), pygame.RESIZABLE)
 
         self._load_fonts()
-        self.stats_visible = False
-        self.data = None
-        self.weather_data = None
-        self._station_bar = []   # list of rgb tuples, one per station in STATION_KEYS order
+        self.stats_visible    = False
+        self.data             = None
+        self.weather_data     = None
+        self._station_bar     = []
         self.current_station_idx = 0
-        self.score = 0.0
-        self._prev_score = None
-        self._history = []
-        self.bg_color = (0, 200, 0)
-        self.last_updated = None
-        self.loading = True
-        self.station_delta = 0
-        self._loading_frame = 0
+        self.score            = 0.0
+        self._prev_score      = None
+        self._history         = []
+        self._last_history_ts = None   # timestamp of last appended history entry
+        self.bg_color         = (0, 200, 0)
+        self.last_updated     = None
+        self.loading          = True
+        self.station_delta    = 0
+        self._loading_frame   = 0
+        # ── Background fetch / stale-data fallback ────────────────────────
+        self._stale_data        = None      # last good data, survives station switch
+        self._fetch_started_at  = None      # monotonic timestamp of start_loading()
+        self._fetch_timeout     = 3.0       # seconds before reverting to stale data
+        self._bg_fetch_active   = False     # True while a fetch is running in background
+        self._refetch_requested = False     # set by debug menu, read by main.py
+        self._restart_requested = False     # set by debug menu, read by main.py
+        # ── Navigation / menu ─────────────────────────────────────────────
+        self._nav = NavigationController(
+            fonts=self.fonts,
+            context={"display": self},
+        )
         self._overlay = self._make_overlay()
 
     def _make_overlay(self):
@@ -146,21 +162,44 @@ class AQIDisplay:
         # Station bar height = same as weather text block (symbol size excluded)
         self._bar_h = self.font_medium.get_height() + self.font_small.get_height() + 12
 
+        # Fonts dict — shared with NavigationController and pages
+        self.fonts = {
+            "huge":        self.font_huge,
+            "large":       self.font_large,
+            "medium":      self.font_medium,
+            "small":       self.font_small,
+            "stats":       self.font_stats,
+            "italic":      self.font_small_italic,
+            "weather":     self.font_weather_symbol,
+            "weather_med": self.font_weather_symbol_med,
+        }
+
+    def start_loading(self) -> None:
+        """Signal that a fetch started — keeps stale data available during wait."""
+        self.loading           = True
+        self._bg_fetch_active  = True
+        self._fetch_started_at = time.monotonic()
+
     def update(self, data: dict | None):
         """Receive new AQI data from fetch thread."""
-        self.loading = False
+        self.loading          = False
+        self._bg_fetch_active = False
         if data is None:
             return
-        self.data = data
+        self.data        = data
+        self._stale_data = data        # persist across station switches
         self.last_updated = datetime.now()
         pol, val, worst_score = worst_pollutant(data["pollutants"])
         self._prev_score = self.score if self.score > 0.0 else None
         self.score = worst_score or 0.0
         _, color = label_pollutant(pol, val) if pol else (None, (0, 210, 0))
         self.bg_color = color
-        self._history.append((self.score, self.bg_color))
-        if len(self._history) > 48:
-            self._history.pop(0)
+        # Only append when timestamp is genuinely new — station switches share the same hour
+        if data["timestamp"] != self._last_history_ts:
+            self._last_history_ts = data["timestamp"]
+            self._history.append((self.score, self.bg_color))
+            if len(self._history) > 48:
+                self._history.pop(0)
 
     def load_history(self, entries: list):
         self._history = entries[-48:]
@@ -185,9 +224,32 @@ class AQIDisplay:
     def handle_event(self, event) -> bool:
         if event.type == pygame.QUIT:
             return False
+
+        if event.type == pygame.VIDEORESIZE:
+            self.w, self.h = event.w, event.h
+            self.screen = pygame.display.set_mode((self.w, self.h), pygame.RESIZABLE)
+            self._load_fonts()
+            self._nav.fonts = self.fonts   # propagate updated sizes
+            self._overlay = self._make_overlay()
+            return True
+
+        # Menu has priority over normal input
+        if self._nav.mode != UIMode.NORMAL:
+            action = self._nav.handle_event(event)
+            if action == NavAction.QUIT:
+                return False
+            if action == NavAction.REFETCH:
+                self._refetch_requested = True
+            if action == NavAction.RESTART:
+                self._restart_requested = True
+            return True
+
+        # Normal mode key handling
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 return False
+            elif event.key == pygame.K_TAB:
+                self._nav.open_menu()
             elif event.key == pygame.K_RIGHT:
                 self.station_delta = 1
             elif event.key == pygame.K_LEFT:
@@ -196,22 +258,44 @@ class AQIDisplay:
                 self.stats_visible = not self.stats_visible
         if event.type == pygame.MOUSEBUTTONDOWN:
             self.stats_visible = not self.stats_visible
-        if event.type == pygame.VIDEORESIZE:
-            self.w, self.h = event.w, event.h
-            self.screen = pygame.display.set_mode((self.w, self.h), pygame.RESIZABLE)
-            self._load_fonts()
-            self._overlay = self._make_overlay()
         return True
 
     def render(self):
+        # Advance menu animation / page ticks every frame
+        self._nav.tick()
+
+        # Stale-data fallback: if fetch takes > 3s, show last known data silently
+        if self.loading and self._fetch_started_at is not None:
+            if time.monotonic() - self._fetch_started_at >= self._fetch_timeout:
+                self.loading = False
+                if self._stale_data is not None:
+                    self.data = self._stale_data
+                log_buffer.warning("[ui] fetch timeout — affichage données stales")
+
         self.screen.fill(self.bg_color)
-        if self.loading:
+
+        if self._nav.mode != UIMode.NORMAL:
+            self._nav.render(self.screen, self.w, self.h)
+        elif self.loading:
             self._draw_loading()
         elif self.stats_visible and self.data:
             self._draw_stats()
         else:
             self._draw_color_mode()
+
+        # Background fetch spinner (bottom-right corner)
+        if self._bg_fetch_active and not self.loading and self._nav.mode == UIMode.NORMAL:
+            self._draw_fetch_spinner()
+
         pygame.display.flip()
+
+    def _draw_fetch_spinner(self):
+        frame = int(time.monotonic() * 2) % 3
+        dots  = ["·  ", " · ", "  ·"][frame]
+        tc    = _contrasting_text_color(self.bg_color)
+        surf  = self.font_small.render(dots, True, tc)
+        self.screen.blit(surf, (self.w - surf.get_width() - 8,
+                                self.h - surf.get_height() - 8))
 
     # ── Color mode ────────────────────────────────────────────────────────────
 
