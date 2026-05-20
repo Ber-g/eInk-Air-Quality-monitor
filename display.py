@@ -211,7 +211,7 @@ class AQIDisplay:
 
     def update_station_bar(self, all_data: dict, station_keys: list):
         """Compute station bar colors from all_data. Keeps last known color on failure."""
-        if not self._station_bar:
+        if len(self._station_bar) != len(station_keys):
             self._station_bar = [(80, 80, 80)] * len(station_keys)
         for i, key in enumerate(station_keys):
             data = all_data.get(key)

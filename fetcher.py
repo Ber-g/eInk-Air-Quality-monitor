@@ -49,48 +49,6 @@ def fetch_all() -> dict[str, dict | None]:
             return {}
 
 
-def fetch(station_key: str) -> dict | None:
-    """
-    Fetch latest hourly data for a station.
-
-    Returns a dict on success:
-        {
-            "station": str,
-            "address": str,
-            "timestamp": datetime,
-            "pollutants": {
-                "PM2.5": float | None,   # µg/m³, None = sensor offline
-                "PM10":  float | None,
-                "NO2":   float | None,
-                "O3":    float | None,
-                "SO2":   float | None,
-                "CO":    float | None,
-            }
-        }
-    Returns None if the API call fails entirely.
-    """
-    station = STATIONS.get(station_key)
-    if station is None:
-        raise ValueError(f"Unknown station '{station_key}'. Valid: {list(STATIONS)}")
-
-    for attempt in range(2):
-        try:
-            r = requests.get(RSQA_API, params={
-                "resource_id": RESOURCE_ID,
-                "limit": 500,
-                "sort": "_id desc",
-            }, timeout=TIMEOUT)
-            r.raise_for_status()
-            records = r.json()["result"]["records"]
-            return _parse(records, station)
-        except Exception as e:
-            if attempt == 0:
-                continue  # one silent retry
-            log_buffer.error(f"[fetcher] RSQA unreachable after 2 attempts: {e}")
-            return None
-
-
-
 def _parse(records: list, station: dict) -> dict | None:
     """Extract latest-hour data for one station from the full record list."""
     sid = station["id"]
@@ -132,8 +90,9 @@ def _parse(records: list, station: dict) -> dict | None:
 
 if __name__ == "__main__":
     print("Testing RSQA fetcher...\n")
+    all_data = fetch_all()
     for key in ("rosemont", "centre_sud", "ndg"):
-        result = fetch(key)
+        result = all_data.get(key)
         if result is None:
             print(f"{key:15} → FAILED")
         else:

@@ -64,6 +64,7 @@ def _do_fetch(display: AQIDisplay):
     _active_keys = new_active
     _station_idx = _active_keys.index(current_key) if current_key in _active_keys else 0
     display.current_station_idx = _station_idx
+    display.current_station_key = _active_keys[_station_idx]
 
     current = all_data.get(_active_keys[_station_idx])
     display.update(current)

@@ -146,7 +146,7 @@ fetcher.py       — client RSQA, conversion CO, correction DST
 aqi.py           — seuils OMS 2021 + UE, couleurs AQI (source de vérité)
 display.py       — rendu pygame : mode couleur, mode détails, écran de chargement
 weather.py       — client Open-Meteo, mapping WMO → icône jour/nuit
-history.py       — persistance SQLite, 48 entrées max (24h à 30 min d'intervalle)
+history.py       — persistance SQLite, clé composite (ts, station), 1 ligne/heure/station
 map_tile.py      — carte vectorielle OSM, baking, cache, projection
 log_buffer.py    — ring buffer 200 lignes + RotatingFileHandler (768 KB max sur SD)
 menu.py          — NavigationController, UIMode, barre de menu, animation blink
