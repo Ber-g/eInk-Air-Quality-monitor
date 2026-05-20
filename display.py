@@ -82,7 +82,7 @@ class AQIDisplay:
         self.data             = None
         self.weather_data     = None
         self._station_bar     = []
-        self.current_station_idx = 0
+        self.current_station_idx  = 0
         self.current_station_key: str | None = None
         self.score            = 0.0
         self._prev_score      = None
@@ -205,8 +205,9 @@ class AQIDisplay:
     def load_history(self, entries: list):
         # entries = [(data_ts, score, color), ...]
         self._history = [(score, color) for (_, score, color) in entries][-48:]
-        # Restore last known timestamp so update() won't re-append the same hour
+        # Restore last timestamp so update() won't re-append the same hour on restart
         self._last_history_ts = entries[-1][0] if entries else None
+        log_buffer.info(f"[history] {len(self._history)} entrées chargées ({self.current_station_key})")
 
     def update_station_bar(self, all_data: dict, station_keys: list):
         """Compute station bar colors from all_data. Keeps last known color on failure."""

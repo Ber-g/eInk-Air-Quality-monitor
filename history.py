@@ -12,32 +12,29 @@ _RETENTION_DAYS = 30
 def _conn() -> sqlite3.Connection:
     db = sqlite3.connect(_DB_PATH)
     db.execute("""CREATE TABLE IF NOT EXISTS history (
-        ts      INTEGER PRIMARY KEY,
+        ts      INTEGER,
+        station TEXT,
         score   REAL,
         r       INTEGER,
         g       INTEGER,
-        b       INTEGER
+        b       INTEGER,
+        PRIMARY KEY (ts, station)
     )""")
-    # Migration: add station column if absent (idempotent)
-    try:
-        db.execute("ALTER TABLE history ADD COLUMN station TEXT")
-        db.commit()
-    except sqlite3.OperationalError:
-        pass   # column already exists
     return db
 
 
 def save(station_key: str, data_ts: "datetime", score: float, color: tuple):
-    ts = int(data_ts.timestamp())   # clé = timestamp RSQA, pas l'heure du Pi
+    """1 row per (RSQA hour, station). Restarts and duplicate fetches are idempotent."""
+    ts = int(data_ts.timestamp())
     cutoff = int((datetime.now() - timedelta(days=_RETENTION_DAYS)).timestamp())
     with _conn() as db:
         db.execute("INSERT OR REPLACE INTO history VALUES (?,?,?,?,?,?)",
-                   (ts, score, color[0], color[1], color[2], station_key))
+                   (ts, station_key, score, color[0], color[1], color[2]))
         db.execute("DELETE FROM history WHERE ts < ?", (cutoff,))
 
 
 def load_last_24h(station_key: str) -> list[tuple["datetime", float, tuple]]:
-    """Returns [(data_ts, score, color), ...] ordered oldest → newest."""
+    """Returns [(data_ts, score, color), ...] for one station, oldest → newest."""
     cutoff = int((datetime.now() - timedelta(hours=24)).timestamp())
     try:
         with _conn() as db:
@@ -52,13 +49,10 @@ def load_last_24h(station_key: str) -> list[tuple["datetime", float, tuple]]:
         return []
 
 
-def clear(station_key: str | None = None):
+def clear():
     try:
         with _conn() as db:
-            if station_key is None:
-                db.execute("DELETE FROM history")
-            else:
-                db.execute("DELETE FROM history WHERE station = ?", (station_key,))
-        log_buffer.info(f"[history] historique effacé ({station_key or 'tout'})")
+            db.execute("DELETE FROM history")
+        log_buffer.info("[history] historique effacé")
     except Exception as e:
         log_buffer.error(f"[history] clear failed: {e}")

@@ -1,4 +1,4 @@
-# AirQualityInk — v2.4
+# AirQualityInk — v2.5
 
 Moniteur de qualité de l'air en temps réel pour Raspberry Pi Zero 2W.
 Affiche les données officielles RSQA de la Ville de Montréal, la météo, une horloge analogique et une carte vectorielle de la ville — sans aucune clé API payante.
@@ -180,7 +180,7 @@ Tous les modules utilisent `log_buffer.info/warning/error()` au lieu de `print()
 
 ### Historique
 
-SQLite local (`history.db`). Plafonné à **48 entrées** (= exactement 24h à un refresh toutes les 30 min). La clé primaire est le timestamp RSQA (heure de la mesure), pas l'heure du Pi — relancer l'app 10 fois dans la même heure produit toujours 1 seule ligne par station (`INSERT OR REPLACE`). Au redémarrage, `_last_history_ts` est restauré depuis la DB pour éviter tout doublon en mémoire. Affiché sous forme de barres colorées en bas à gauche de la vue détails.
+SQLite local (`history.db`). Clé primaire composite `(ts, station)` : 1 ligne par heure RSQA **par station**. Le timestamp de la mesure RSQA (pas celui du Pi) sert de clé — relancer l'app 10 fois dans la même heure produit toujours 1 seule ligne (`INSERT OR REPLACE`). Au redémarrage, `_last_history_ts` est restauré depuis la DB pour éviter tout doublon en mémoire. Chaque station charge son propre graphique au changement de station. Affiché sous forme de barres colorées en bas à gauche de la vue détails.
 
 ---
 
@@ -238,7 +238,7 @@ Un fond vert apparaît dès l'initialisation de pygame (~5s après le boot), ava
 
 La page Debug affiche 4 cartes d'état côte à côte (station courante, âge des données, heure du prochain fetch, score AQI), suivies du journal des 200 dernières lignes de log. Le prochain fetch est calculé comme l'heure exacte à `:50` de l'heure courante ou suivante.
 
-**Reset historique** : la touche `[H]` affiche un overlay de confirmation (bordure rouge, avertissement de perte définitive). `[O]` confirme : la DB est vidée et `_history` réinitialisée avec la mesure courante comme première barre. `[Esc]` ou `[N]` annule.
+**Reset historique** : la touche `[H]` affiche un overlay de confirmation (bordure rouge, avertissement de perte définitive). `[O]` confirme : toute la DB est vidée (toutes les stations) et `_history` réinitialisée avec la mesure courante comme première barre. `[Esc]` ou `[N]` annule.
 
 ---
 

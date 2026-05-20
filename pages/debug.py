@@ -27,15 +27,13 @@ class DebugPage(BasePage):
         key = event.key
 
         if self._confirm_reset:
-            if key in (pygame.K_o, pygame.K_a):
+            if key in (pygame.K_o, pygame.K_y):
                 disp = self._context.get("display")
-                station_key = (getattr(disp, "current_station_key", None)
-                               if (disp and key == pygame.K_o) else None)
-                history.clear(station_key)
+                history.clear()
                 if disp:
-                    disp._history = []
+                    disp._history        = []
                     disp._last_history_ts = None
-                    if disp.data and key == pygame.K_o:
+                    if disp.data:
                         disp._history.append((disp.score, disp.bg_color))
                         disp._last_history_ts = disp.data["timestamp"]
                 self._confirm_reset = False
@@ -138,9 +136,7 @@ class DebugPage(BasePage):
             ("Réinitialiser l'historique ?", font_m, _WARN),
             ("Les données seront perdues pour toujours.", font_s, _TEXT),
             ("", None, None),
-            ("[O] Station courante   [A] Toutes les stations", font_s, _TEXT),
-            ("", None, None),
-            ("[Esc / N] Annuler", font_s, _DIM),
+            ("[O] Confirmer          [Esc / N] Annuler", font_s, _DIM),
         ]
 
         line_surfs = [(font.render(txt, True, col) if font else None)
