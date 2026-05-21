@@ -28,6 +28,7 @@ import time
 
 import log_buffer
 from fetcher import fetch_all, STATIONS
+from aqi import worst_pollutant, label_pollutant, score_pollutant
 from weather import fetch_weather
 from display import AQIDisplay
 import history
@@ -69,8 +70,18 @@ def _do_fetch(display: AQIDisplay):
     current = all_data.get(_active_keys[_station_idx])
     display.update(current)
     display.update_station_bar(all_data, _active_keys)
+
+    # Save all active stations — not just the selected one
+    for key in _active_keys:
+        data = all_data.get(key)
+        if not data:
+            continue
+        pol, val, _ = worst_pollutant(data["pollutants"])
+        _, color = label_pollutant(pol, val) if pol else (None, (0, 210, 0))
+        score = score_pollutant(pol, val) if pol else 0.0
+        history.save(key, data["timestamp"], score, color)
+
     if current:
-        history.save(_active_keys[_station_idx], current["timestamp"], display.score, display.bg_color)
         log_buffer.info(f"[fetch] ok — {current['station']} {current['timestamp'].strftime('%H:%M')} "
                         f"PM2.5={current['pollutants'].get('PM2.5', '?')} µg/m³  "
                         f"({len(_active_keys)}/{len(STATION_KEYS)} stations actives)")
