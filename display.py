@@ -226,6 +226,120 @@ class AQIDisplay:
         if weather is not None:
             self.weather_data = weather
 
+    def show_aqi(self) -> None:
+        self._nav.show_aqi()
+
+    def show_art(self):
+        return self._nav.show_art()
+
+    def get_art_page(self):
+        return self._nav.get_art_page()
+
+    def remote_nav(self, action: str) -> dict:
+        """
+        Télécommande : traduit une action distante en navigation locale.
+
+        `next` / `prev` sont CONTEXTUELS — « suivant » ne désigne pas la même
+        chose selon ce qui est affiché (œuvre suivante au Musée, entrée suivante
+        dans le menu, station suivante sur l'écran principal).
+
+        L'action est traduite en événement clavier et réinjectée dans le state
+        machine existant plutôt que dupliquée : toute page ajoutée plus tard
+        devient pilotable à distance sans toucher à ce code.
+
+        À noter : `ok` dans la barre de menu déclenche l'animation de double-blink
+        (~200 ms) avant l'ouverture réelle de la page. Le `mode` renvoyé est donc
+        celui d'AVANT la transition.
+        """
+        from pages.art import ArtPage
+
+        action = (action or "").lower()
+        # `active_page` reste renseigné après open_menu() (la page est seulement
+        # masquée, pas quittée). Sans le test sur le mode, « suivant » dans le
+        # menu ferait défiler les œuvres au lieu des entrées de menu.
+        page = self._nav.active_page if self._nav.mode == UIMode.PAGE else None
+
+        if action == "menu":
+            self._nav.open_menu()
+
+        elif action == "back":
+            # Jamais de K_ESCAPE en mode NORMAL : il quitte l'application.
+            # Une télécommande ne doit pas pouvoir éteindre le musée.
+            if self._nav.mode != UIMode.NORMAL:
+                self._send_key(pygame.K_ESCAPE)
+
+        elif action == "ok":
+            self._send_key(pygame.K_RETURN)
+
+        elif action in ("next", "prev"):
+            if isinstance(page, ArtPage):
+                page.next_image() if action == "next" else page.prev_image()
+            else:
+                self._send_key(pygame.K_RIGHT if action == "next" else pygame.K_LEFT)
+
+        else:
+            return {"success": False, "error": f"Action inconnue : {action}"}
+
+        art_page = self.get_art_page()
+        return {
+            "success": True,
+            "action": action,
+            "mode": self._nav.get_active_page_name(),
+            "art": art_page.get_current_info() if art_page else None,
+        }
+
+    def _send_key(self, key: int) -> None:
+        """Injecte une touche synthétique dans le gestionnaire d'événements.
+
+        Appelé depuis le thread principal uniquement (file d'actions de main.py).
+        """
+        self.handle_event(pygame.event.Event(pygame.KEYDOWN, key=key, mod=0, unicode=""))
+
+    def capture_screenshot(self) -> bytes:
+        """Capture l'écran Pygame sous forme d'octets PNG."""
+        import io
+        buf = io.BytesIO()
+        try:
+            surf = self.screen.copy()
+            pygame.image.save(surf, buf, "screenshot.png")
+            return buf.getvalue()
+        except Exception:
+            try:
+                from PIL import Image
+                raw_str = pygame.image.tostring(self.screen, "RGB")
+                img = Image.frombytes("RGB", (self.w, self.h), raw_str)
+                img.save(buf, format="PNG")
+                return buf.getvalue()
+            except Exception as e:
+                log_buffer.warning(f"[display] capture_screenshot failed: {e}")
+                return b""
+
+    def get_status(self) -> dict:
+        art_page = self.get_art_page()
+        art_info = art_page.get_current_info() if art_page else None
+
+        pol = None
+        pol_val = None
+        pol_label = None
+        if self.data and "pollutants" in self.data:
+            pol, pol_val, _ = worst_pollutant(self.data["pollutants"])
+            pol_label, _ = label_pollutant(pol, pol_val) if pol else (None, None)
+
+        return {
+            "mode": self._nav.get_active_page_name(),
+            "station": self.data.get("station") if self.data else self.current_station_key,
+            "station_key": self.current_station_key,
+            "score": round(self.score, 1),
+            "worst_pollutant": pol,
+            "pollutant_value": pol_val,
+            "pollutant_label": pol_label,
+            "weather": {
+                "temperature": self.weather_data.get("temperature") if self.weather_data else None,
+                "rain_at": self.weather_data.get("rain_at").strftime("%H:%M") if (self.weather_data and self.weather_data.get("rain_at")) else None
+            } if self.weather_data else None,
+            "art": art_info
+        }
+
     def handle_event(self, event) -> bool:
         if event.type == pygame.QUIT:
             return False
@@ -599,4 +713,8 @@ class AQIDisplay:
         return f"il y a {mins // 60}h{mins % 60:02d}"
 
     def quit(self):
+        # Le player vidéo est un process externe : sans ça il survit à l'arrêt
+        # de l'app et reste en plein écran par-dessus la console.
+        import video_player
+        video_player.player.stop()
         pygame.quit()

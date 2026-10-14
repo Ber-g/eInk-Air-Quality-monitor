@@ -2,6 +2,23 @@ __pycache__/
 *.pyc
 *.pyo
 venv/
+
+# Secrets — clés Gemini / OpenWeather
 .env
+
+# Médias du musée : contenu personnel, jamais versionné.
+# Le dossier vit sur chaque machine indépendamment ; les cartels .json et les
+# vignettes sont des caches reconstructibles.
+arts/
+
+# Données locales, propres à chaque machine
+history.db
+logs/
+map_data.json
+roe.pdf
+
 *.png
 *.jpg
+
+.DS_Store
+.vscode/

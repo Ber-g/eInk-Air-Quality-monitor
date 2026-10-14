@@ -15,6 +15,7 @@ import pygame
 from pages.base import BasePage, NavAction
 from pages.debug    import DebugPage
 from pages.settings import SettingsPage
+from pages.art import ArtPage
 
 # ── Visual constants ─────────────────────────────────────────────────────────
 MENU_BG        = (  0,   0,   0)
@@ -29,16 +30,15 @@ _PAD           = 64   # margin from screen edges to menu bar and page content
 @dataclass
 class MenuItem:
     label:      str
-    page_class: type
+    page_class: type | None  # None = retour à l'écran principal (AQI)
     shortcut:   str   # cosmetic key hint (not wired to a keypress)
 
 
 MENU_ITEMS: list[MenuItem] = [
-    MenuItem("Debug",      DebugPage,    "D"),
-    MenuItem("Paramètres", SettingsPage, "P"),
-    # Future pages slot in here, zero other changes needed:
-    # MenuItem("Actualités", NewsFeedPage, "A"),
-    # MenuItem("Météo+",     WeatherDetailPage, "W"),
+    MenuItem("Qualité de l'air", None,         "Q"),  # Quitte le menu vers l'écran principal
+    MenuItem("Musée",            ArtPage,      "M"),
+    MenuItem("Debug",            DebugPage,    "D"),
+    MenuItem("Paramètres",       SettingsPage, "P"),
 ]
 
 
@@ -76,6 +76,55 @@ class NavigationController:
         self.mode     = UIMode.MENU_BAR
         self.selected = 0
 
+    def show_aqi(self) -> None:
+        """Bascule directement vers l'écran principal Qualité de l'air."""
+        if self._active_page:
+            self._active_page.on_exit()
+            self._active_page = None
+        self.mode = UIMode.NORMAL
+
+    def show_art(self) -> ArtPage:
+        """Bascule directement vers le mode Musée (ArtPage)."""
+        return self.show_page_by_label("Musée")
+
+    def show_page_by_label(self, label: str) -> BasePage | None:
+        """Bascule directement sur une page par son label."""
+        for i, item in enumerate(MENU_ITEMS):
+            if item.label.lower() == label.lower():
+                self.selected = i
+                if item.page_class is None:
+                    self.show_aqi()
+                    return None
+                if self._active_page and self._active_page != self._get_page(item):
+                    self._active_page.on_exit()
+                page = self._get_page(item)
+                page.on_enter(self.context)
+                self._active_page = page
+                self.mode = UIMode.PAGE
+                return page
+        return None
+
+    def get_art_page(self) -> ArtPage | None:
+        """Récupère l'instance de la page Musée (qu'elle soit active ou en cache)."""
+        for item in MENU_ITEMS:
+            if item.page_class == ArtPage:
+                return self._get_page(item)
+        return None
+
+    @property
+    def active_page(self) -> BasePage | None:
+        """Page actuellement ouverte, ou None en mode NORMAL / MENU_BAR."""
+        return self._active_page
+
+    def get_active_page_name(self) -> str:
+        if self.mode == UIMode.NORMAL:
+            return "aqi"
+        if self.mode == UIMode.MENU_BAR:
+            return "menu_bar"
+        if self._active_page:
+            return self._active_page.__class__.__name__
+        return "unknown"
+
     def tick(self) -> None:
         """Call every frame regardless of mode."""
         if self._blink_frames > 0:
@@ -88,6 +137,7 @@ class NavigationController:
     def handle_event(self, event) -> NavAction:
         if event.type != pygame.KEYDOWN:
             return NavAction.NONE
+
         key = event.key
 
         if self.mode == UIMode.MENU_BAR:
@@ -123,17 +173,36 @@ class NavigationController:
         screen.fill(PAGE_BG)
         if self.mode == UIMode.PAGE and self._active_page:
             self._active_page.render(screen, w, h, self.bar_h, self.fonts)
-        self._draw_menu_bar(screen, w)
+
+        # La barre de menu est affichée en mode MENU_BAR ou sur les pages utilitaires (Debug, Paramètres).
+        # Sur la page Musée (ArtPage), l'affichage est 100% plein écran sans barre parasite.
+        show_menu = (self.mode == UIMode.MENU_BAR) or (
+            self.mode == UIMode.PAGE and not isinstance(self._active_page, ArtPage)
+        )
+
+        if show_menu:
+            self._draw_menu_bar(screen, w)
 
     # ── Private ──────────────────────────────────────────────────────────────
 
     def _get_page(self, item: MenuItem) -> BasePage:
+        if item.page_class is None:
+            raise ValueError("MenuItem without page_class cannot instantiate a page")
         if item.label not in self._page_cache:
             self._page_cache[item.label] = item.page_class()
         return self._page_cache[item.label]
 
     def _enter_page(self) -> None:
         item = MENU_ITEMS[self.selected]
+        
+        # Si aucun fichier/classe n'est associé, on sort du menu vers l'écran principal
+        if item.page_class is None:
+            if self._active_page:
+                self._active_page.on_exit()
+                self._active_page = None
+            self.mode = UIMode.NORMAL
+            return
+
         page = self._get_page(item)
         page.on_enter(self.context)
         self._active_page = page

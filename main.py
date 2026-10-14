@@ -23,6 +23,7 @@ _early_screen.fill((0, 160, 0))
 pygame.display.flip()
 # ─────────────────────────────────────────────────────────────────────────────
 
+import queue
 import threading
 import time
 
@@ -33,6 +34,7 @@ from weather import fetch_weather
 from display import AQIDisplay
 import history
 import map_tile
+from remote_server import RemoteServer
 
 # ── Config — override via env vars on Pi ──────────────────────────────────────
 REFRESH_SECS         = int(os.getenv("AQI_REFRESH", 30 * 60))
@@ -142,6 +144,10 @@ def main():
     display.load_history(history.load_last_24h(initial_key))
     map_tile.start_fetch()
 
+    action_queue = queue.Queue()
+    remote_server = RemoteServer(display, action_queue)
+    remote_server.start()
+
     t = threading.Thread(target=_fetch_loop, args=(display,), daemon=True)
     t.start()
 
@@ -155,7 +161,106 @@ def main():
         for event in pygame.event.get():
             running = display.handle_event(event)
 
+        # ── Traitement des commandes reçues depuis l'API locale / Telegram ────
+        while not action_queue.empty():
+            try:
+                action_type, kwargs, res_q = action_queue.get_nowait()
+            except queue.Empty:
+                break
+
+            result = {"success": True}
+            try:
+                if action_type == "screenshot":
+                    result["png_bytes"] = display.capture_screenshot()
+
+                elif action_type == "set_view":
+                    view = kwargs.get("view", "aqi")
+                    if view in ("art", "musee", "musée"):
+                        display.show_art()
+                    elif view in ("aqi", "airq", "normal"):
+                        display.show_aqi()
+                    elif view == "menu":
+                        display._nav.open_menu()
+                    result["view"] = display._nav.get_active_page_name()
+
+                elif action_type == "art_next":
+                    art_page = display.get_art_page()
+                    if art_page:
+                        display.show_art()
+                        result["art"] = art_page.next_image()
+
+                elif action_type == "art_prev":
+                    art_page = display.get_art_page()
+                    if art_page:
+                        display.show_art()
+                        result["art"] = art_page.prev_image()
+
+                elif action_type == "art_select":
+                    art_page = display.get_art_page()
+                    if art_page:
+                        display.show_art()
+                        if kwargs.get("index") is not None:
+                            result["art"] = art_page.set_image_by_index(int(kwargs["index"]))
+                        elif kwargs.get("filename"):
+                            result["art"] = art_page.set_image_by_name(str(kwargs["filename"]))
+
+                elif action_type == "art_cartel":
+                    art_page = display.get_art_page()
+                    if art_page:
+                        display.show_art()
+                        show_val = art_page.toggle_cartel(kwargs.get("show"))
+                        result["show_cartel"] = show_val
+                        result["art"] = art_page.get_current_info()
+
+                elif action_type == "art_cartel_page":
+                    art_page = display.get_art_page()
+                    if art_page:
+                        display.show_art()
+                        page_val = art_page.change_cartel_page(kwargs.get("delta", 1))
+                        result["cartel_page"] = page_val
+                        result["art"] = art_page.get_current_info()
+
+                elif action_type == "art_add_and_show":
+                    art_page = display.get_art_page()
+                    if art_page:
+                        display.show_art()
+                        file_path = kwargs.get("file_path")
+                        result["art"] = art_page.add_and_display_image(file_path)
+
+                elif action_type == "art_delete":
+                    art_page = display.get_art_page()
+                    if art_page:
+                        result = art_page.delete_media(str(kwargs.get("filename", "")))
+                    else:
+                        result = {"success": False, "error": "Page Musée indisponible"}
+
+                elif action_type == "nav":
+                    result = display.remote_nav(str(kwargs.get("action", "")))
+
+                elif action_type == "station":
+                    delta = kwargs.get("delta")
+                    key = kwargs.get("key")
+                    if delta is not None:
+                        display.station_delta = int(delta)
+                    elif key and key in _active_keys:
+                        _station_idx = _active_keys.index(key)
+                        display.station_delta = 0
+                        display.current_station_idx = _station_idx
+                        new_key = _active_keys[_station_idx]
+                        display.current_station_key = new_key
+                        display.load_history(history.load_last_24h(new_key))
+                        display.start_loading()
+                        _fetch_event.set()
+                    result["station"] = display.current_station_key
+
+            except Exception as ex:
+                result = {"success": False, "error": str(ex)}
+
+            if res_q:
+                res_q.put(result)
+
         if display._restart_requested:
+            remote_server.stop()
             display.quit()
             os.execv(sys.executable, [sys.executable] + sys.argv)
 
@@ -177,6 +282,7 @@ def main():
         display.render()
         clock.tick(30)
 
+    remote_server.stop()
     display.quit()
 
 
