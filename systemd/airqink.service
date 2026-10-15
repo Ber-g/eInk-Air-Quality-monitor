@@ -1,3 +1,6 @@
+# GABARIT — ne pas copier tel quel dans /etc/systemd/system/.
+# `install.sh` y substitue __AIRQ_USER__ et __AIRQ_DIR__ : systemd ne sait pas
+# interpoler une variable d'environnement dans User= ni WorkingDirectory=.
 [Unit]
 Description=AirQualityInk — moniteur qualité de l'air
 After=network-online.target
@@ -7,9 +10,9 @@ StartLimitBurst=5
 StartLimitIntervalSec=120
 
 [Service]
-User=pi
+User=__AIRQ_USER__
 SupplementaryGroups=video
-WorkingDirectory=/home/pi/Documents/AirQ
+WorkingDirectory=__AIRQ_DIR__
 Environment=SDL_VIDEODRIVER=fbcon
 Environment=SDL_FBDEV=/dev/fb0
 Environment=AQI_FULLSCREEN=1
