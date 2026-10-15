@@ -178,6 +178,23 @@ class RemoteServer:
                 elif path == "/api/art/upload":
                     self._handle_art_upload(query)
 
+                elif path == "/api/art/rename":
+                    body = self._read_json_body()
+                    filename = body.get("filename")
+                    new_title = (body.get("title") or body.get("new_title") or "").strip()
+                    if not filename or not new_title:
+                        self._send_json(
+                            {"success": False,
+                             "error": "Champs 'filename' et 'title' requis"}, 400
+                        )
+                        return
+                    res = self._dispatch_sync_action(
+                        "art_rename", filename=str(filename), new_title=new_title
+                    )
+                    # Un nom déjà pris est un conflit, pas une panne : même code
+                    # que l'upload, pour que l'appelant traite les deux pareil.
+                    self._send_json(res, 409 if res.get("conflict") else 200)
+
                 elif path == "/api/art/cartel_set":
                     body = self._read_json_body()
                     filename = body.get("filename")

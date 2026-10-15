@@ -1,5 +1,5 @@
 # QA LOG
-_Last updated: 2026-10-14 | Version: 2.6.0_
+_Last updated: 2026-10-15 | Version: 2.7.0_
 
 ## Threat model — surfaces d'entrée
 
@@ -110,6 +110,16 @@ _Last updated: 2026-10-14 | Version: 2.6.0_
   - *Titre réécrit par l'IA* — **medium, corrigé** : Gemini a réellement renommé « Mon Titre à Moi » en « Symphonie chromatique du néant cathodique » pendant les essais. Le verrou `titre_verrouille` est désormais restauré avant l'écriture du cache, et vérifié : « Essai Verrou » est ressorti intact avec un artiste rempli par l'IA.
   - *Abandons invisibles* — **low, corrigé** : deux chemins d'abandon de la génération de cartel ne journalisaient rien, ce qui a rendu un diagnostic inutilement long pendant cette session. Ils tracent désormais leur raison.
 
+### Renommage d'œuvre — 2026-10-15
+- **Threat model:** le nouveau nom vient d'un message Telegram (traversée de chemin, nom vide) ; un renommage peut écraser une autre œuvre ; une vidéo en lecture tient l'ancien inode.
+- **Tests run:** renommage nominal avec titre accentué, vers un nom déjà pris, vers son propre nom, avec un titre sans caractère utilisable, et avec `../../etc/passwd` comme cible.
+- **Result:** **pass**.
+- **Findings:**
+  - *Traversée de chemin* — **non exploitable** : `_resolve_media()` refuse toute cible hors `arts/` (vérifié : `../../etc/passwd` → « Chemin de fichier refusé »), et `_ascii_stem()` ne laisse survivre ni `/` ni `..` dans le nom produit.
+  - *Écrasement* — **pass** : un nom déjà pris renvoie 409 sans rien déplacer.
+  - *Nom vide* — **pass** : un titre sans caractère utilisable est refusé avant tout déplacement.
+  - *Lecteur orphelin* — **pass par conception** : la lecture est arrêtée avant le renommage puis relancée sur le nouveau chemin.
+
 ---
 ## QA CHANGE LOG
 
@@ -133,3 +143,8 @@ _Last updated: 2026-10-14 | Version: 2.6.0_
 **Tested:** contrat d'upload (titre, sans-IA, conflit, remplacement), `cartel_set`, survie du titre face à Gemini, garde-fous de chemin — au `curl` sur le Pi puis depuis le routeur du bot.
 **Result:** **ship**.
 **Action taken:** livré et déployé. Deux défauts trouvés et corrigés pendant l'audit (titre réécrit par l'IA ; abandons de cartel non journalisés).
+
+### 2026-10-15 — v2.7 : renommage d'œuvre
+**Tested:** cas nominal et quatre cas limites (nom pris, nom identique, nom invalide, traversée de chemin), au curl contre le musée réel puis depuis le routeur du bot.
+**Result:** **ship**.
+**Action taken:** livré et déployé.

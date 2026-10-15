@@ -231,6 +231,16 @@ def main():
                             no_ai=bool(kwargs.get("no_ai")),
                         )
 
+                elif action_type == "art_rename":
+                    art_page = display.get_art_page()
+                    if art_page:
+                        result = art_page.rename_media(
+                            str(kwargs.get("filename", "")),
+                            str(kwargs.get("new_title", "")),
+                        )
+                    else:
+                        result = {"success": False, "error": "Page Musée indisponible"}
+
                 elif action_type == "art_cartel_set":
                     art_page = display.get_art_page()
                     if art_page:

@@ -18,6 +18,8 @@ from datetime import date
 import json
 import math
 import os
+import re
+import unicodedata
 from pathlib import Path
 import random
 import threading
@@ -82,6 +84,20 @@ CARTEL_PROMPT = (
 SOURCE_PENDING = "ia_en_attente"   # amorce posée à l'upload, Gemini doit compléter
 SOURCE_AI      = "ia"              # cartel rédigé par Gemini
 SOURCE_MANUAL  = "manuel"          # saisi à la main, Gemini ne sera jamais appelé
+
+
+def _ascii_stem(text: str) -> str:
+    r"""
+    Radical de nom de fichier à partir d'un titre libre.
+
+    Même règle que côté API (`remote_server._ascii_stem`) : accents repliés,
+    tout caractère hors `[\w\s-]` retiré, espaces en underscores. Les deux
+    chemins DOIVENT produire le même nom, sinon renommer une œuvre lui donnerait
+    un nom qu'un upload du même titre n'aurait jamais produit.
+    """
+    folded = unicodedata.normalize("NFKD", text)
+    folded = "".join(c for c in folded if not unicodedata.combining(c))
+    return re.sub(r"[^\w\s-]", "", folded, flags=re.ASCII).strip().replace(" ", "_")
 
 
 def _write_cartel(json_path: Path, data: dict) -> bool:
@@ -602,6 +618,87 @@ class ArtPage(BasePage):
             return data if isinstance(data, dict) else {}
         except Exception:
             return {}
+
+    def rename_media(self, filename: str, new_title: str) -> dict:
+        """
+        Renomme une œuvre : le fichier, son cartel et sa vignette.
+
+        Le titre du cartel suit le nom du fichier, comme à l'upload où la légende
+        fait les deux — « renommer une œuvre » ne veut rien dire d'autre. Le
+        nouveau titre est verrouillé : l'IA ne le réécrira pas.
+
+        Le média est déplacé en premier. Si cette étape échoue, rien n'a bougé ;
+        si elle réussit, les fichiers dérivés suivent ou se régénèrent — ils sont
+        reconstructibles, le média non.
+        """
+        target, error = self._resolve_media(filename)
+        if target is None:
+            return {"success": False, "error": error}
+
+        stem = _ascii_stem(new_title)
+        if not stem:
+            return {"success": False, "error": "Le nouveau nom ne contient aucun caractère utilisable."}
+
+        dest = target.with_name(f"{stem}{target.suffix}")
+        if dest == target:
+            return {"success": False, "error": f"L'œuvre porte déjà ce nom : {target.name}"}
+        if dest.exists():
+            return {
+                "success": False,
+                "error": f"Une œuvre porte déjà le nom « {stem} ».",
+                "conflict": dest.name,
+            }
+
+        # Un lecteur qui tiendrait l'ancien inode survivrait au renommage.
+        was_playing = video_player.player.current_path is not None and (
+            video_player.player.current_path.resolve() == target
+        )
+        video_player.player.stop_if_playing(target)
+
+        try:
+            target.rename(dest)
+        except OSError as e:
+            return {"success": False, "error": f"Renommage impossible : {e}"}
+
+        # Cartel : on le déplace en forçant le nouveau titre. Il doit rester plus
+        # récent que le média, sinon le cache serait jugé périmé et régénéré.
+        old_json, new_json = target.with_suffix(".json"), dest.with_suffix(".json")
+        cartel = self._read_cartel(old_json)
+        if cartel:
+            cartel["titre"] = new_title.strip()
+            cartel["titre_verrouille"] = True
+            _write_cartel(new_json, cartel)
+        try:
+            old_json.unlink(missing_ok=True)
+        except OSError as e:
+            log_buffer.warning(f"[art] ancien cartel non supprimé {old_json.name} : {e}")
+
+        old_thumb, new_thumb = (
+            video_player.thumbnail_path(target), video_player.thumbnail_path(dest)
+        )
+        try:
+            if old_thumb.exists():
+                new_thumb.parent.mkdir(parents=True, exist_ok=True)
+                old_thumb.rename(new_thumb)
+        except OSError as e:
+            # Sans conséquence : la vignette se régénère à la demande.
+            log_buffer.warning(f"[art] vignette non déplacée {old_thumb.name} : {e}")
+
+        log_buffer.info(f"[art] œuvre renommée : {target.name} → {dest.name}")
+
+        self._refresh_media_list(keep=dest)
+        self._load_current_media()
+        if was_playing and not video_player.player.is_playing():
+            # On avait coupé la lecture pour renommer : elle doit reprendre.
+            video_player.player.play(dest)
+
+        return {
+            "success": True,
+            "renamed_from": target.name,
+            "renamed_to": dest.name,
+            "titre": new_title.strip(),
+            "art": self.get_current_info(),
+        }
 
     def set_cartel(self, filename: str, fields: dict) -> dict:
         """

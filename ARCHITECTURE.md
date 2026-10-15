@@ -1,5 +1,5 @@
 # ARCHITECTURE
-_Last updated: 2026-10-14 | Version: 2.6.0_
+_Last updated: 2026-10-15 | Version: 2.7.0_
 
 ## System Overview
 
@@ -109,6 +109,7 @@ _Last updated: 2026-10-14 | Version: 2.6.0_
 | `remote_server` | boucle principale | `action_queue` (`queue.Queue`, réponse synchrone, timeout 3 s) |
 | bot musée | `/api/art/upload` | en-têtes `X-Art-Title`, `X-No-AI`, `X-On-Conflict` (textes percent-encodés) |
 | bot musée | `/api/art/cartel_set` | cartel saisi à la main, JSON |
+| bot musée | `/api/art/rename` | renomme média + cartel + vignette ; 409 si le nom est pris |
 
 ## Known Constraints & Trade-offs
 
@@ -131,6 +132,21 @@ _Last updated: 2026-10-14 | Version: 2.6.0_
 
 ---
 ## CHANGE LOG
+
+### 2026-10-15 — v2.7 : renommer une œuvre
+
+**Changed:** `pages/art.py` — `rename_media()` déplace le média, son cartel et sa vignette, et force le nouveau titre (verrouillé). `_ascii_stem()` y est dupliqué depuis `remote_server` à dessein : les deux chemins doivent produire le même nom, sinon renommer donnerait un nom qu'un upload du même titre n'aurait jamais produit. Nouvelle route `POST /api/art/rename` et action `art_rename`.
+
+**Reason:** une œuvre mal nommée à l'envoi ne pouvait être corrigée qu'en la supprimant et en la renvoyant — ce qui perdait son cartel.
+
+**Impact:**
+- Le média est déplacé en premier : si ça échoue, rien n'a bougé ; si ça réussit, les fichiers dérivés suivent ou se régénèrent — ils sont reconstructibles, le média non.
+- Le cartel renommé reste plus récent que le média, donc le cache n'est pas jugé périmé.
+- Une vidéo en cours de lecture est arrêtée avant le renommage puis relancée : un lecteur tenant l'ancien inode y aurait survécu.
+- Un nom déjà pris renvoie **409**, comme l'upload — l'appelant traite les deux cas pareil.
+
+**Open questions:** `renommer` et `modifier` peuvent faire diverger le titre du cartel et le nom du fichier. C'est assumé : ce sont deux gestes distincts.
+
 
 ### 2026-10-14 — v2.6 : l'œuvre peut être nommée, et soustraite à l'IA
 
