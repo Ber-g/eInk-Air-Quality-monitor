@@ -112,12 +112,13 @@ _Last updated: 2026-10-15 | Version: 2.7.0_
 
 ### Renommage d'œuvre — 2026-10-15
 - **Threat model:** le nouveau nom vient d'un message Telegram (traversée de chemin, nom vide) ; un renommage peut écraser une autre œuvre ; une vidéo en lecture tient l'ancien inode.
-- **Tests run:** renommage nominal avec titre accentué, vers un nom déjà pris, vers son propre nom, avec un titre sans caractère utilisable, et avec `../../etc/passwd` comme cible.
+- **Tests run:** renommage nominal, vers un nom déjà pris, vers son propre nom, avec un nom sans caractère utilisable, et avec `../../etc/passwd` comme cible. Vérifié aussi sur une vraie vidéo que le **cartel n'est pas réécrit**.
 - **Result:** **pass**.
 - **Findings:**
   - *Traversée de chemin* — **non exploitable** : `_resolve_media()` refuse toute cible hors `arts/` (vérifié : `../../etc/passwd` → « Chemin de fichier refusé »), et `_ascii_stem()` ne laisse survivre ni `/` ni `..` dans le nom produit.
   - *Écrasement* — **pass** : un nom déjà pris renvoie 409 sans rien déplacer.
   - *Nom vide* — **pass** : un titre sans caractère utilisable est refusé avant tout déplacement.
+  - *Cartel préservé* — **pass** : renommer `video_telegram_20261014_222047.mp4` en `boucle_hiver.mp4` laisse titre et artiste intacts.
   - *Lecteur orphelin* — **pass par conception** : la lecture est arrêtée avant le renommage puis relancée sur le nouveau chemin.
 
 ---

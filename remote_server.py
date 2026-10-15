@@ -181,15 +181,19 @@ class RemoteServer:
                 elif path == "/api/art/rename":
                     body = self._read_json_body()
                     filename = body.get("filename")
-                    new_title = (body.get("title") or body.get("new_title") or "").strip()
-                    if not filename or not new_title:
+                    # `title` reste accepté comme alias historique, mais ce champ
+                    # nomme le FICHIER : renommer ne retitre pas l'œuvre.
+                    new_name = (
+                        body.get("new_name") or body.get("title") or body.get("new_title") or ""
+                    ).strip()
+                    if not filename or not new_name:
                         self._send_json(
                             {"success": False,
-                             "error": "Champs 'filename' et 'title' requis"}, 400
+                             "error": "Champs 'filename' et 'new_name' requis"}, 400
                         )
                         return
                     res = self._dispatch_sync_action(
-                        "art_rename", filename=str(filename), new_title=new_title
+                        "art_rename", filename=str(filename), new_name=new_name
                     )
                     # Un nom déjà pris est un conflit, pas une panne : même code
                     # que l'upload, pour que l'appelant traite les deux pareil.

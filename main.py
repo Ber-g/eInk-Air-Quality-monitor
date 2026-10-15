@@ -236,7 +236,7 @@ def main():
                     if art_page:
                         result = art_page.rename_media(
                             str(kwargs.get("filename", "")),
-                            str(kwargs.get("new_title", "")),
+                            str(kwargs.get("new_name", "")),
                         )
                     else:
                         result = {"success": False, "error": "Page Musée indisponible"}

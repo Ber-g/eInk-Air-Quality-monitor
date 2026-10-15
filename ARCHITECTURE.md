@@ -109,7 +109,7 @@ _Last updated: 2026-10-15 | Version: 2.7.0_
 | `remote_server` | boucle principale | `action_queue` (`queue.Queue`, réponse synchrone, timeout 3 s) |
 | bot musée | `/api/art/upload` | en-têtes `X-Art-Title`, `X-No-AI`, `X-On-Conflict` (textes percent-encodés) |
 | bot musée | `/api/art/cartel_set` | cartel saisi à la main, JSON |
-| bot musée | `/api/art/rename` | renomme média + cartel + vignette ; 409 si le nom est pris |
+| bot musée | `/api/art/rename` | renomme le **fichier** (média + cartel + vignette), sans toucher au titre ; 409 si le nom est pris |
 
 ## Known Constraints & Trade-offs
 
@@ -135,9 +135,11 @@ _Last updated: 2026-10-15 | Version: 2.7.0_
 
 ### 2026-10-15 — v2.7 : renommer une œuvre
 
-**Changed:** `pages/art.py` — `rename_media()` déplace le média, son cartel et sa vignette, et force le nouveau titre (verrouillé). `_ascii_stem()` y est dupliqué depuis `remote_server` à dessein : les deux chemins doivent produire le même nom, sinon renommer donnerait un nom qu'un upload du même titre n'aurait jamais produit. Nouvelle route `POST /api/art/rename` et action `art_rename`.
+**Changed:** `pages/art.py` — `rename_media()` déplace le média, son cartel et sa vignette. **Le cartel est déplacé, pas réécrit** : renommer un fichier ne retitre pas l'œuvre. `_ascii_stem()` y est dupliqué depuis `remote_server` à dessein : les deux chemins doivent produire le même nom, sinon renommer donnerait un nom qu'un upload du même titre n'aurait jamais produit. Nouvelle route `POST /api/art/rename` et action `art_rename`.
 
-**Reason:** une œuvre mal nommée à l'envoi ne pouvait être corrigée qu'en la supprimant et en la renvoyant — ce qui perdait son cartel.
+**Reason:** un fichier horodaté illisible (`video_telegram_20261014_222047.mp4`) ne pouvait être corrigé qu'en supprimant l'œuvre et en la renvoyant — ce qui perdait son cartel.
+
+Renommer et retitrer sont deux gestes distincts : le nom de fichier sert à désigner l'œuvre dans les commandes, le titre est ce que le visiteur lit. `set_cartel()` s'occupe du titre.
 
 **Impact:**
 - Le média est déplacé en premier : si ça échoue, rien n'a bougé ; si ça réussit, les fichiers dérivés suivent ou se régénèrent — ils sont reconstructibles, le média non.
@@ -145,7 +147,7 @@ _Last updated: 2026-10-15 | Version: 2.7.0_
 - Une vidéo en cours de lecture est arrêtée avant le renommage puis relancée : un lecteur tenant l'ancien inode y aurait survécu.
 - Un nom déjà pris renvoie **409**, comme l'upload — l'appelant traite les deux cas pareil.
 
-**Open questions:** `renommer` et `modifier` peuvent faire diverger le titre du cartel et le nom du fichier. C'est assumé : ce sont deux gestes distincts.
+**Open questions:** nom de fichier et titre peuvent diverger — c'est assumé, et c'est tout l'intérêt.
 
 
 ### 2026-10-14 — v2.6 : l'œuvre peut être nommée, et soustraite à l'IA

@@ -619,13 +619,14 @@ class ArtPage(BasePage):
         except Exception:
             return {}
 
-    def rename_media(self, filename: str, new_title: str) -> dict:
+    def rename_media(self, filename: str, new_name: str) -> dict:
         """
-        Renomme une œuvre : le fichier, son cartel et sa vignette.
+        Renomme le FICHIER d'une œuvre. Le cartel est déplacé, pas réécrit.
 
-        Le titre du cartel suit le nom du fichier, comme à l'upload où la légende
-        fait les deux — « renommer une œuvre » ne veut rien dire d'autre. Le
-        nouveau titre est verrouillé : l'IA ne le réécrira pas.
+        Renommer et retitrer sont deux gestes distincts : le nom de fichier sert
+        à désigner l'œuvre dans les commandes, le titre est ce que le visiteur
+        lit. Changer l'un ne doit pas changer l'autre — `set_cartel()` s'occupe
+        du titre.
 
         Le média est déplacé en premier. Si cette étape échoue, rien n'a bougé ;
         si elle réussit, les fichiers dérivés suivent ou se régénèrent — ils sont
@@ -635,7 +636,7 @@ class ArtPage(BasePage):
         if target is None:
             return {"success": False, "error": error}
 
-        stem = _ascii_stem(new_title)
+        stem = _ascii_stem(new_name)
         if not stem:
             return {"success": False, "error": "Le nouveau nom ne contient aucun caractère utilisable."}
 
@@ -660,13 +661,12 @@ class ArtPage(BasePage):
         except OSError as e:
             return {"success": False, "error": f"Renommage impossible : {e}"}
 
-        # Cartel : on le déplace en forçant le nouveau titre. Il doit rester plus
-        # récent que le média, sinon le cache serait jugé périmé et régénéré.
+        # Le cartel suit le fichier, inchangé : il est repéré par le nom du média.
+        # On le réécrit plutôt que de le déplacer, pour qu'il reste plus récent
+        # que le média — sinon le cache serait jugé périmé et régénéré.
         old_json, new_json = target.with_suffix(".json"), dest.with_suffix(".json")
         cartel = self._read_cartel(old_json)
         if cartel:
-            cartel["titre"] = new_title.strip()
-            cartel["titre_verrouille"] = True
             _write_cartel(new_json, cartel)
         try:
             old_json.unlink(missing_ok=True)
@@ -696,7 +696,8 @@ class ArtPage(BasePage):
             "success": True,
             "renamed_from": target.name,
             "renamed_to": dest.name,
-            "titre": new_title.strip(),
+            # Le titre est rendu pour information : il n'a PAS été modifié.
+            "titre": (cartel or {}).get("titre", ""),
             "art": self.get_current_info(),
         }
 
