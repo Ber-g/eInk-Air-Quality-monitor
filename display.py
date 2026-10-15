@@ -713,8 +713,8 @@ class AQIDisplay:
         return f"il y a {mins // 60}h{mins % 60:02d}"
 
     def quit(self):
-        # Le player vidéo est un process externe : sans ça il survit à l'arrêt
-        # de l'app et reste en plein écran par-dessus la console.
+        # Le decodeur video est un process ffmpeg externe : sans ca il survit
+        # a l'arret de l'app et continue de decoder dans le vide.
         import video_player
         video_player.player.stop()
         pygame.quit()

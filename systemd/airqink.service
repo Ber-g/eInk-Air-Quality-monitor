@@ -17,7 +17,9 @@ ExecStartPre=+/usr/bin/chvt 1
 ExecStart=/usr/bin/python3 main.py
 Restart=on-failure
 RestartSec=10
-MemoryMax=200M
+# 500M : ffmpeg decode les videos du mode Musee dans ce meme cgroup.
+# A 200M il etait tue en pleine lecture, l'app restant sous les 80M.
+MemoryMax=500M
 StandardInput=tty
 StandardOutput=journal
 StandardError=journal

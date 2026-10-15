@@ -14,6 +14,7 @@ import queue
 import re
 import threading
 import time
+import unicodedata
 import urllib.parse
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import log_buffer
@@ -177,6 +178,24 @@ class RemoteServer:
                 elif path == "/api/art/upload":
                     self._handle_art_upload(query)
 
+                elif path == "/api/art/cartel_set":
+                    body = self._read_json_body()
+                    filename = body.get("filename")
+                    if not filename:
+                        self._send_json(
+                            {"success": False, "error": "Champ 'filename' requis"}, 400
+                        )
+                        return
+                    fields = {
+                        k: str(body.get(k) or "").strip()
+                        for k in ("titre", "artiste", "annee", "contexte_oeuvre")
+                        if body.get(k) is not None
+                    }
+                    res = self._dispatch_sync_action(
+                        "art_cartel_set", filename=str(filename), fields=fields
+                    )
+                    self._send_json(res)
+
                 elif path == "/api/art/delete":
                     body = self._read_json_body()
                     filename = body.get("filename")
@@ -210,6 +229,39 @@ class RemoteServer:
 
                 else:
                     self._send_json({"success": False, "error": f"Endpoint POST {path} not found"}, 404)
+
+            @staticmethod
+            def _header_text(raw: str | None) -> str | None:
+                """
+                Décode un en-tête porteur de texte libre.
+
+                Les en-têtes HTTP ne transportent que du latin-1 : « Nuit étoilée »
+                envoyé tel quel arrive mutilé. L'émetteur percent-encode, on décode
+                ici. Un en-tête non encodé reste lisible — `unquote` laisse passer
+                le texte qui ne contient pas de `%`.
+                """
+                if not raw:
+                    return None
+                try:
+                    value = urllib.parse.unquote(raw.strip(), encoding="utf-8", errors="replace")
+                except Exception:
+                    value = raw.strip()
+                return value or None
+
+            @staticmethod
+            def _ascii_stem(text: str) -> str:
+                """
+                Fabrique un radical de nom de fichier à partir d'un titre libre.
+
+                Les accents sont repliés sur leur équivalent ASCII : un nom de
+                fichier sans accent traverse sans dommage les en-têtes HTTP, les
+                URL et les commandes Telegram (« supprime nuit_etoilee »), là où
+                « Nuit_étoilée » invite à une erreur d'encodage à chaque étape.
+                Le titre affiché, lui, garde ses accents — il vit dans le cartel.
+                """
+                folded = unicodedata.normalize("NFKD", text)
+                folded = "".join(c for c in folded if not unicodedata.combining(c))
+                return re.sub(r"[^\w\s-]", "", folded, flags=re.ASCII).strip().replace(" ", "_")
 
             @staticmethod
             def _sniff_extension(data: bytes) -> str | None:
@@ -280,7 +332,10 @@ class RemoteServer:
                 # 2. Cas binaire brut (image/jpeg, image/png, application/octet-stream)
                 if file_bytes is None:
                     file_bytes = self.rfile.read(length)
-                    suggested_name = self.headers.get("X-Filename") or (query.get("filename", [None])[0])
+                    suggested_name = (
+                        self._header_text(self.headers.get("X-Filename"))
+                        or (query.get("filename", [None])[0])
+                    )
 
                 if not file_bytes:
                     self._send_json({"success": False, "error": "Aucune donnée image reçue"}, 400)
@@ -297,19 +352,52 @@ class RemoteServer:
                     return
                 kind = "video" if ext in (".mp4", ".mov", ".webm", ".avi") else "image"
 
-                if suggested_name:
-                    clean_stem = re.sub(r"[^\w\s-]", "", Path(suggested_name).stem).strip().replace(" ", "_")
-                    clean_name = f"{clean_stem}{ext}" if clean_stem else f"art_{int(time.time())}{ext}"
+                # Titre de l'œuvre, tel que l'expéditeur l'a nommée. Il sert à la
+                # fois de radical de nom de fichier et de titre affiché au cartel.
+                title = self._header_text(self.headers.get("X-Art-Title"))
+                no_ai = (self.headers.get("X-No-AI") or "").strip().lower() in (
+                    "1", "true", "yes", "oui"
+                )
+
+                stem_source = title or (Path(suggested_name).stem if suggested_name else "")
+                clean_stem = self._ascii_stem(stem_source) if stem_source else ""
+                if clean_stem:
+                    clean_name = f"{clean_stem}{ext}"
                 else:
                     prefix = "video" if kind == "video" else "art"
                     clean_name = f"{prefix}_telegram_{time.strftime('%Y%m%d_%H%M%S')}{ext}"
 
+                # Politique de collision. Un appelant qui nomme son œuvre veut un
+                # nom précis : lui en substituer un autre en silence lui ferait
+                # croire que « Nuit étoilée » est entrée alors qu'il en existe
+                # désormais deux. Sans titre (anciens appelants), on garde le
+                # suffixage historique pour ne rien casser.
+                on_conflict = (self.headers.get("X-On-Conflict") or "").strip().lower()
+                if on_conflict not in ("reject", "replace", "suffix"):
+                    on_conflict = "reject" if title else "suffix"
+
                 save_path = _ARTS_DIR / clean_name
-                # Éviter d'écraser si déjà présent
-                counter = 1
-                while save_path.exists():
-                    save_path = _ARTS_DIR / f"{save_path.stem}_{counter}{ext}"
-                    counter += 1
+                if save_path.exists() and on_conflict == "reject":
+                    self._send_json(
+                        {
+                            "success": False,
+                            "error": f"Une œuvre porte déjà le nom « {save_path.stem} ».",
+                            "conflict": save_path.name,
+                            "conflict_position": self._media_position(save_path.name),
+                        },
+                        409,
+                    )
+                    return
+
+                if on_conflict == "suffix":
+                    counter = 1
+                    while save_path.exists():
+                        save_path = _ARTS_DIR / f"{clean_stem or 'art'}_{counter}{ext}"
+                        counter += 1
+                # on_conflict == "replace" : on écrase. Les fichiers dérivés (.json
+                # du cartel, vignette) ne sont pas effacés ici — leur validité se
+                # juge déjà sur la date du média, qui vient de changer. Ils seront
+                # régénérés d'eux-mêmes.
 
                 try:
                     save_path.write_bytes(file_bytes)
@@ -320,9 +408,24 @@ class RemoteServer:
                     return
 
                 # Exécuter l'affichage immédiat sur Pygame
-                res = self._dispatch_sync_action("art_add_and_show", file_path=save_path)
+                res = self._dispatch_sync_action(
+                    "art_add_and_show", file_path=save_path, title=title, no_ai=no_ai
+                )
                 res["saved_filename"] = save_path.name
                 res["kind"] = kind
+                res["title"] = title
+                res["no_ai"] = no_ai
                 self._send_json(res)
+
+            def _media_position(self, filename: str) -> int | None:
+                """Rang affiché (1-based) d'une œuvre, pour que l'appelant puisse dire
+                « n° 12 » plutôt que de renvoyer l'utilisateur à la liste complète."""
+                art_page = parent.display.get_art_page()
+                if art_page is None:
+                    return None
+                for item in art_page.get_all_images_list():
+                    if item.get("filename") == filename:
+                        return item.get("index", 0) + 1
+                return None
 
         return APIHandler

@@ -225,7 +225,21 @@ def main():
                     if art_page:
                         display.show_art()
                         file_path = kwargs.get("file_path")
-                        result["art"] = art_page.add_and_display_image(file_path)
+                        result["art"] = art_page.add_and_display_image(
+                            file_path,
+                            title=kwargs.get("title"),
+                            no_ai=bool(kwargs.get("no_ai")),
+                        )
+
+                elif action_type == "art_cartel_set":
+                    art_page = display.get_art_page()
+                    if art_page:
+                        result = art_page.set_cartel(
+                            str(kwargs.get("filename", "")),
+                            kwargs.get("fields") or {},
+                        )
+                    else:
+                        result = {"success": False, "error": "Page Musée indisponible"}
 
                 elif action_type == "art_delete":
                     art_page = display.get_art_page()
